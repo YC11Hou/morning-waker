@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WakeUpCall 仪表盘</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", sans-serif;
+  --bg: #f6f7f9; --bg-panel: #fff; --bg-subtle: #eff1f4; --bg-hover: #eaecef; --border: #e2e5e9;
+  --text: #1a1a1a; --text-2: #595959; --text-3: #8c8c8c;
+  --accent: #ff8c00; --ontime: #2cbb5d; --late: #e0a800; --verylate: #ff7a1a; --missed: #ef4743;
+  --shadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.04); --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1a1a1a; --bg-panel:#262626; --bg-subtle:#303030; --bg-hover:#383838; --border:#3a3a3a;
+          --text:#eaeaea; --text-2:#b0b0b0; --text-3:#7a7a7a; --shadow: 0 1px 3px rgba(0,0,0,.4); }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }
+header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; font-weight: 700; }
+.sub { color: var(--text-3); font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.tile .k { color: var(--text-3); font-size: 12px; }
+.tile .v { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tile .v small { font-size: 13px; color: var(--text-2); font-weight: 500; margin-left: 2px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+.panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-title { font-weight: 650; font-size: 15px; }
+.nav { border: 1px solid var(--border); background: var(--bg-subtle); color: var(--text); border-radius: 7px; width: 28px; height: 28px; cursor: pointer; font-family: inherit; }
+.nav:hover { background: var(--bg-hover); }
+.weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.weekdays div { text-align: center; color: var(--text-3); font-size: 11.5px; padding-bottom: 6px; }
+.cal-grid { row-gap: 6px; }
+.cell { height: 50px; display: flex; flex-direction: column; align-items: center; padding-top: 2px; border-radius: 8px; }
+.daynum { width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 9px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tag { font-size: 10px; font-weight: 650; margin-top: 2px; line-height: 1; color: var(--text-3); }
+.ontime .daynum { background: var(--ontime); color: #fff; }
+.late .daynum { background: var(--late); color: #fff; }
+.verylate .daynum { background: var(--verylate); color: #fff; }
+.missed .daynum { background: var(--missed); color: #fff; }
+.ontime .tag { color: var(--ontime); } .late .tag { color: var(--late); } .verylate .tag { color: var(--verylate); } .missed .tag { color: var(--missed); }
+.today .daynum { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; }
+.future .daynum { opacity: .4; }
+.has { cursor: pointer; } .has:hover { background: var(--bg-subtle); }
+.sel { background: var(--bg-subtle); }
+.legend { display: flex; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.detail h3 { margin: 0 0 10px; font-size: 15px; }
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.tl li:last-child { border-bottom: none; }
+.tl .t { color: var(--text-3); font-variant-numeric: tabular-nums; width: 62px; flex-shrink: 0; }
+.empty { color: var(--text-3); padding: 20px 0; text-align: center; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+th { color: var(--text-3); font-weight: 500; font-size: 12px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; color: #fff; }
+.now { font-size: 13px; color: var(--text-2); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>☎️ WakeUpCall</h1>
+    <span class="sub" id="sub">加载中…</span>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="cal-head">
+        <button class="nav" id="prev">‹</button>
+        <div class="cal-title" id="cal-title"></div>
+        <button class="nav" id="next">›</button>
+      </div>
+      <div class="weekdays"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div>
+      <div class="cal-grid" id="cal"></div>
+      <div class="legend">
+        <span><i style="background:var(--ontime)"></i>准时（≤5 分钟）</span>
+        <span><i style="background:var(--late)"></i>迟到</span>
+        <span><i style="background:var(--verylate)"></i>&gt;15 分钟 / 已告状</span>
+        <span><i style="background:var(--missed)"></i>未打卡</span>
+      </div>
+    </div>
+    <div class="panel detail" id="detail"><div class="empty">点日历上的某一天看当天时间线</div></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="cal-title">最近 14 天</div>
+    <table id="recent"></table>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let DAYS = {}, STATUS = {}, month, selected = null;
+
+function cls(d) {
+  if (!d || !d.target) return '';
+  if (d.missed) return 'missed';
+  if (d.checkin == null) return '';
+  if (d.tattled || d.late > 15) return 'verylate';
+  if (d.late > 5) return 'late';
+  return 'ontime';
+}
+const LABEL = { ontime: '准时', late: '迟到', verylate: '严重迟到', missed: '未打卡' };
+const COLOR = { ontime: 'var(--ontime)', late: 'var(--late)', verylate: 'var(--verylate)', missed: 'var(--missed)' };
+const pad = n => String(n).padStart(2, '0');
+const key = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+
+function tiles() {
+  const today = STATUS.now.slice(0, 10);
+  const all = Object.entries(DAYS).filter(([k, d]) => d.target && k <= today).sort();
+  const thisMonth = all.filter(([k]) => k.startsWith(today.slice(0, 7)));
+  const ok = arr => arr.filter(([, d]) => d.checkin != null && !d.missed);
+  const rate = arr => arr.length ? Math.round(100 * ok(arr).length / arr.length) : null;
+  const lates = ok(all).map(([, d]) => d.late || 0);
+  const avg = lates.length ? (lates.reduce((a, b) => a + b, 0) / lates.length).toFixed(1) : '–';
+  let streak = 0;
+  for (let i = all.length - 1; i >= 0; i--) { const d = all[i][1]; if (d.checkin != null && !d.missed && d.late <= 15) streak++; else break; }
+  const tattles = all.filter(([, d]) => d.tattled).length;
+  const t = [
+    ['本月打卡率', rate(thisMonth) == null ? '–' : rate(thisMonth), rate(thisMonth) == null ? '' : '%'],
+    ['平均迟到', avg, lates.length ? '分钟' : ''],
+    ['连续 15 分钟内起床', streak, '天'],
+    ['被告状次数', tattles, '次'],
+    ['记录天数', all.length, '天'],
+  ];
+  $('#tiles').innerHTML = t.map(([k, v, u]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div></div>`).join('');
+}
+
+function calendar() {
+  const y = month.getFullYear(), m = month.getMonth();
+  $('#cal-title').textContent = `${y} 年 ${m + 1} 月`;
+  const today = STATUS.now.slice(0, 10);
+  const grid = $('#cal'); grid.innerHTML = '';
+  for (let i = 0; i < new Date(y, m, 1).getDay(); i++) grid.appendChild(document.createElement('div'));
+  const n = new Date(y, m + 1, 0).getDate();
+  for (let d = 1; d <= n; d++) {
+    const k = key(y, m, d), day = DAYS[k], c = cls(day);
+    const el = document.createElement('div');
+    el.className = `cell ${c} ${k === today ? 'today' : ''} ${k > today ? 'future' : ''} ${day ? 'has' : ''} ${k === selected ? 'sel' : ''}`;
+    let tag = '';
+    if (day && day.checkin != null && !day.missed) tag = day.late > 0 ? `+${Math.round(day.late)}m` : day.checkin;
+    else if (day && day.missed) tag = '✕';
+    el.innerHTML = `<span class="daynum">${d}</span><span class="tag">${tag}</span>`;
+    if (day) el.onclick = () => { selected = k; calendar(); detail(k); };
+    grid.appendChild(el);
+  }
+}
+
+function detail(k) {
+  const d = DAYS[k], c = cls(d);
+  const head = `<h3>${k} <span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || '进行中'}</span></h3>`;
+  const summary = d.checkin != null
+    ? `<div class="now">目标 ${d.target} · 打卡 ${d.checkin}（${d.via}）· 晚 ${Math.round(d.late)} 分钟 · 升级 ${d.steps} 步${d.tattled ? ' · 已告状' : ''}</div>`
+    : `<div class="now">目标 ${d.target} · ${d.missed ? '超时未打卡' : '未完成'} · 升级 ${d.steps} 步${d.tattled ? ' · 已告状' : ''}</div>`;
+  const KIND = { wake_start: '⏰ 起床流程开始', checkin: '✅ 打卡', missed: '❌ 超时未打卡', escalate: '↑ 升级' };
+  const ACT = { notify: '手机催促', tattle: '📣 告状', shell: '执行命令' };
+  const items = d.events.map(e => {
+    let txt = KIND[e.kind] || e.kind;
+    if (e.kind === 'escalate') txt += `：${ACT[e.action] || e.action}（第 ${e.after_min} 分钟）`;
+    if (e.kind === 'checkin') txt += `（${e.via}）`;
+    return `<li><span class="t">${e.ts}</span><span>${txt}</span></li>`;
+  }).join('');
+  $('#detail').innerHTML = head + summary + `<ul class="tl" style="margin-top:12px">${items}</ul>`;
+}
+
+function recent() {
+  const today = STATUS.now.slice(0, 10);
+  const rows = Object.entries(DAYS).filter(([k, d]) => d.target && k <= today).sort().slice(-14).reverse();
+  if (!rows.length) { $('#recent').innerHTML = '<tr><td class="empty">还没有记录。明早第一次。</td></tr>'; return; }
+  $('#recent').innerHTML = '<tr><th>日期</th><th>目标</th><th>打卡</th><th>迟到</th><th>方式</th><th>升级</th><th>结果</th></tr>' +
+    rows.map(([k, d]) => { const c = cls(d); return `<tr><td>${k}</td><td>${d.target}</td><td>${d.checkin ?? '–'}</td><td>${d.late != null ? Math.round(d.late) + ' 分钟' : '–'}</td><td>${d.via ?? '–'}</td><td>${d.steps}${d.tattled ? ' 📣' : ''}</td><td><span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || '进行中'}</span></td></tr>`; }).join('');
+}
+
+async function load() {
+  [DAYS, STATUS] = await Promise.all([fetch('/api/days').then(r => r.json()), fetch('/api/status').then(r => r.json())]);
+  const t = STATUS.today || {};
+  $('#sub').textContent = `${STATUS.now} ${STATUS.tz} · 起床 ${STATUS.wake} · 今天：${({idle:'等待中', active:'⏰ 进行中', done:'✅ 已打卡', missed:'❌ 未打卡', skipped:'跳过'})[t.wake_phase] || '–'}`;
+  if (!month) { const [y, m] = STATUS.now.split('-'); month = new Date(+y, +m - 1, 1); }
+  tiles(); calendar(); recent();
+  if (selected) detail(selected);
+}
+$('#prev').onclick = () => { month = new Date(month.getFullYear(), month.getMonth() - 1, 1); calendar(); };
+$('#next').onclick = () => { month = new Date(month.getFullYear(), month.getMonth() + 1, 1); calendar(); };
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>

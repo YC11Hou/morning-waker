@@ -44,6 +44,30 @@ def read_all() -> list[dict]:
     return out
 
 
+def days(include_drills: bool = False) -> dict[str, dict]:
+    """按日期聚合：{date: {target, checkin, late, via, missed, tattled, steps, events[]}}。"""
+    out: dict[str, dict] = {}
+    for r in read_all():
+        if r.get("drill") and not include_drills:
+            continue
+        d = out.setdefault(r["date"], {"target": None, "checkin": None, "late": None, "via": None,
+                                       "missed": False, "tattled": False, "steps": 0, "events": []})
+        k = r["kind"]
+        d["events"].append({"ts": r["ts"][11:19], "kind": k, "action": r.get("action"),
+                            "via": r.get("via"), "after_min": r.get("after_min")})
+        if k == "wake_start":
+            d["target"] = r.get("target")
+        elif k == "checkin":
+            d["checkin"], d["late"], d["via"] = r["ts"][11:16], r.get("late_min"), r.get("via")
+        elif k == "missed":
+            d["missed"] = True
+        elif k == "escalate":
+            d["steps"] += 1
+            if r.get("action") == "tattle":
+                d["tattled"] = True
+    return out
+
+
 def stats(days: int = 14) -> str:
     """最近 N 天一张表：目标 / 打卡 / 迟到分钟 / 告状 / 上床时间。"""
     recs = read_all()

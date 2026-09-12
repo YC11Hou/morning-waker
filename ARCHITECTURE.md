@@ -32,6 +32,7 @@
 | `imsg.py` | 发 iMessage（AppleScript，正文走 argv）；只读 chat.db 取新消息 | Messages.app、`chat.db` |
 | `alarm.py` | Mac 本机循环响铃；拉音量、停铃还原；`caffeinate -u` 点亮屏幕 | afplay、osascript |
 | `journal.py` | 事件日志、守护进程日志、`stats` 表 | — |
+| `web.py` + `web/index.html` | 本地仪表盘：只读 `/api/days`（journal 按日聚合）与 `/api/status`；月历 + 统计 + 每日时间线 | 127.0.0.1 |
 | `cli.py` | `on/off/status/checkin/drill/doctor/test-msg/log/stats/run` | launchctl（可选） |
 
 ## 三个打卡口，优先级从上到下

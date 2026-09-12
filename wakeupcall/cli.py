@@ -31,6 +31,7 @@ USAGE = """用法: wakeupcall <命令>
   doctor      体检：配置、iMessage 数据库、提醒事项权限、定时唤醒、防睡眠、守护进程
   log         跟踪守护进程日志
   stats [天]  最近 N 天打卡表（默认 14）
+  dash [端口] 打开本地仪表盘（日历 + 统计 + 每日时间线），默认 5180
   run         前台跑守护进程（调试用）"""
 
 
@@ -204,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
         return subprocess.call(["tail", "-n", "30", "-f", str(journal.DAEMON_LOG)])
     if cmd == "stats":
         print(journal.stats(int(argv[1]) if len(argv) > 1 else 14))
+        return 0
+    if cmd == "dash":
+        from .web import serve
+        port = int(argv[1]) if len(argv) > 1 else 5180
+        subprocess.Popen(["sh", "-c", f"sleep 0.8 && open http://127.0.0.1:{port}"])
+        serve(port)
         return 0
     if cmd == "run":
         from .daemon import main as run

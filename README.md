@@ -60,13 +60,15 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 | `doctor` | 体检：配置、chat.db 权限、提醒事项列表、定时唤醒、防睡眠、守护进程、告状收件人 |
 | `test-msg` | 给自己发一条测试消息 |
 | `log` | 跟踪守护进程日志 |
-| `stats [天]` | 最近 N 天打卡表：目标 / 打卡 / 迟到 / 告状 / 上床 |
+| `stats [天]` | 最近 N 天打卡表（终端） |
+| `dash [端口]` | 本地仪表盘：月历按结果上色（准时 / 迟到 / 严重迟到 / 未打卡）、统计块、点某天看时间线。默认 http://127.0.0.1:5180 |
 | `run` | 前台跑守护进程（调试） |
 
 ## 目录
 
 ```
-wakeupcall/          代码（config / imsg / reminders / alarm / journal / daemon / cli）
+wakeupcall/          代码（config / imsg / reminders / alarm / journal / daemon / cli / web）
+web/                 仪表盘静态页（无构建、无依赖，主题跟随系统）
 helpers/             reminders.swift（EventKit 帮手，首次运行自动编译到 build/）
 tests/               状态机单元测试（python3 -m unittest discover -s tests）
 bin/wakeupcall       入口
