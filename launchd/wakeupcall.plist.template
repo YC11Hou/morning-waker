@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>{{LABEL}}</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{PYTHON}}</string>
+		<string>-m</string>
+		<string>wakeupcall.daemon</string>
+	</array>
+	<key>WorkingDirectory</key><string>{{ROOT}}</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONPATH</key><string>{{ROOT}}</string>
+		<key>WAKEUPCALL_DAEMON</key><string>1</string>
+	</dict>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key><true/>
+	<key>StandardOutPath</key><string>{{LOG}}</string>
+	<key>StandardErrorPath</key><string>{{LOG}}</string>
+</dict>
+</plist>

@@ -1,0 +1,11 @@
+# ── 个人数据，永不入库 ──────────────────────────────
+config.local.toml
+config.local.*
+state/
+logs/
+*.log
+# ── 常规 ───────────────────────────────────────────
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
