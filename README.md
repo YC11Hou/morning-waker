@@ -41,7 +41,7 @@
 git clone <this repo> ~/Desktop/Projects/wakeupcall && cd ~/Desktop/Projects/wakeupcall
 cp config.example.toml config.local.toml     # 填自己的手机号、朋友号码、时间
 bin/wakeupcall test-msg                      # 先验证 iMessage 通道：手机应收到一条
-bin/wakeupcall on                            # 装成 launchd 常驻（开机自启、崩了自动拉起）
+bin/wakeupcall on                            # 后台常驻（从终端 fork，继承权限；重启 Mac 后要再跑一次）
 bin/wakeupcall drill                         # 演习：整条链路走一遍（15 分钟压成 90 秒，告状只发给自己）
 ```
 
@@ -51,7 +51,7 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 
 | 命令 | 作用 |
 |---|---|
-| `on` / `off` | 启动 / 停止守护进程（launchd） |
+| `on` / `off` | 启动 / 停止守护进程。`on --launchd` 用 launchd 开机自启，但要先在「隐私与安全性 → 完全磁盘访问」里加上 Python 本体，否则 launchd 起的进程读不了 chat.db |
 | `status` | 守护进程状态、今天的进度、升级阶梯 |
 | `checkin` | 本机打卡 |
 | `drill [倍率]` | 立刻演习，倍率缩放升级分钟数（默认 0.1） |

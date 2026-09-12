@@ -13,13 +13,16 @@ from . import journal
 from .config import CONFIG_PATH, ROOT, STATE_DIR, load
 from .daemon import CHECKIN_FILE, DAY_FILE, DRILL_FILE
 
+PIDFILE = STATE_DIR / "daemon.pid"
+
 LABEL = f"com.{getpass.getuser()}.wakeupcall"
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 PY = sys.executable
 
 USAGE = """用法: wakeupcall <命令>
-  on          安装并启动常驻守护进程（launchd，开机自启、崩了自动拉起）
-  off         停止并卸载
+  on          后台启动守护进程（从当前终端 fork，继承终端的磁盘访问/自动化权限）
+  on --launchd 改用 launchd 常驻（开机自启）。需要先给 Python 本体授「完全磁盘访问」
+  off         停止（两种方式都停）
   status      守护进程状态 + 今天的进度
   checkin     本机打卡（等价于手机回「起」）
   drill [倍率] 立刻演习一遍完整流程；倍率把升级分钟数缩放，默认 0.1（15 分钟→90 秒）。
@@ -41,10 +44,35 @@ def _loaded() -> bool:
     return LABEL in p.stdout
 
 
-def cmd_on() -> int:
+def _pid() -> int | None:
+    try:
+        pid = int(PIDFILE.read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def cmd_on(launchd: bool = False) -> int:
     load()                                             # 先校验配置，占位值直接拒
     journal.LOG_DIR.mkdir(exist_ok=True)
     STATE_DIR.mkdir(exist_ok=True)
+    if not launchd:
+        if pid := _pid():
+            print(f"✅ 已经在跑了（pid {pid}）")
+            return 0
+        env = {**os.environ, "PYTHONPATH": str(ROOT), "WAKEUPCALL_DAEMON": "1"}
+        with open(journal.DAEMON_LOG, "a") as out:
+            p = subprocess.Popen([PY, "-m", "wakeupcall.daemon"], cwd=ROOT, env=env,
+                                 stdout=out, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, start_new_session=True)
+        PIDFILE.write_text(str(p.pid))
+        time.sleep(2)
+        if _pid():
+            print(f"✅ WakeUpCall 已启动（pid {p.pid}）\n   日志：wakeupcall log ／ 状态：wakeupcall status")
+            return 0
+        print("❌ 启动失败，看 wakeupcall log", file=sys.stderr)
+        return 1
     if _loaded():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
     PLIST.write_text(_plist())
@@ -55,6 +83,10 @@ def cmd_on() -> int:
 
 
 def cmd_off() -> int:
+    if pid := _pid():
+        os.kill(pid, 15)
+        time.sleep(0.5)
+    PIDFILE.unlink(missing_ok=True)
     if PLIST.exists():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
         PLIST.unlink()
@@ -65,7 +97,12 @@ def cmd_off() -> int:
 def cmd_status() -> int:
     cfg = load()
     now = datetime.now(cfg.tz)
-    print(f"守护进程：{'✅ 运行中' if _loaded() else '🛑 未运行'}（{LABEL}）")
+    if pid := _pid():
+        print(f"守护进程：✅ 运行中（pid {pid}）")
+    elif _loaded():
+        print(f"守护进程：✅ launchd 托管（{LABEL}）")
+    else:
+        print("守护进程：🛑 未运行")
     print(f"配置：{CONFIG_PATH}")
     print(f"起床 {'%02d:%02d' % cfg.wake_time}  睡前提醒 "
           f"{'%02d:%02d' % cfg.bed_time if cfg.bed_enabled else '关'}  时区 {cfg.tz.key}"
@@ -87,7 +124,7 @@ def cmd_checkin() -> int:
 
 
 def cmd_drill(scale: str = "0.1") -> int:
-    if not _loaded():
+    if not (_pid() or _loaded()):
         print("守护进程没在跑，先 wakeupcall on", file=sys.stderr)
         return 1
     STATE_DIR.mkdir(exist_ok=True)
@@ -108,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     cmd = argv[0] if argv else "status"
     if cmd == "on":
-        return cmd_on()
+        return cmd_on(launchd="--launchd" in argv)
     if cmd == "off":
         return cmd_off()
     if cmd == "status":
