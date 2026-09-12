@@ -40,6 +40,10 @@ class Config:
     alarm_interval: float
     steps: list[Step]
     tattle_name: str
+    rem_enabled: bool
+    rem_list: str
+    rem_title: str
+    rem_ahead_min: float
 
 
 def _hm(s: str) -> tuple[int, int]:
@@ -56,6 +60,7 @@ def load(path: Path = CONFIG_PATH) -> Config:
     if not self_number or self_number.startswith("+6500000000"):
         sys.exit("config.local.toml 里 [imessage].self 还是占位值，填你自己的手机号。")
     wake, bed, alarm = raw.get("wake", {}), raw.get("bedtime", {}), raw.get("alarm", {})
+    rem = raw.get("reminders", {})
     steps = [Step(after_min=float(s.get("after_min", 0)), action=s.get("action", "notify"),
                   text=s.get("text", ""), to=list(s.get("to", [])), cmd=s.get("cmd", ""))
              for s in raw.get("escalation", [])]
@@ -79,4 +84,8 @@ def load(path: Path = CONFIG_PATH) -> Config:
         alarm_interval=float(alarm.get("interval_sec", 2)),
         steps=steps,
         tattle_name=raw.get("tattle", {}).get("name", "我"),
+        rem_enabled=bool(rem.get("enabled", False)),
+        rem_list=rem.get("list", "Reminders"),
+        rem_title=rem.get("title", "☀️ 起床打卡"),
+        rem_ahead_min=float(rem.get("create_ahead_min", 60)),
     )

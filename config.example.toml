@@ -21,6 +21,15 @@ enabled = true
 remind_at = "23:30"                  # 理想入睡时刻，到点推一条「该睡了」
 keywords = ["睡", "晚安", "sleep"]      # 回这些词 = 记录实际上床时间（可选）
 
+[reminders]
+# 主打卡口：每天起床前 create_ahead_min 分钟，在 macOS 提醒事项的 list 里新建一条 title，
+# 到点 iPhone 本地响提醒（不依赖 Mac）。你在手机上勾掉它 = 打卡，勾的时刻就是打卡时间。
+# WakeUpCall 只新建、只读，永远不替你勾。
+enabled = true
+list = "重要事项"
+title = "☀️ 起床打卡"
+create_ahead_min = 60
+
 [alarm]
 enabled = true                       # Mac 本机循环响铃，直到打卡
 sound = "/System/Library/Sounds/Sosumi.aiff"

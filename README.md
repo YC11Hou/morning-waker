@@ -20,12 +20,14 @@
 每一步的时间、文案、动作都在 `config.local.toml` 里改。动作有三种：
 `notify`（推给自己）、`tattle`（发给朋友列表）、`shell`（跑任意命令，自己加更狠的）。
 
-## 打卡方式
+## 打卡方式（三个口，任一即可）
 
-- **手机**：给自己的号码回一条 iMessage，内容是关键词之一（默认 `起` / `起了` / `up` / `打卡`）
-- **Mac**：`wakeupcall checkin`
+1. **提醒事项（主）**：每天提前一天在 macOS 提醒事项里建好一条「☀️ 起床打卡」，iPhone 到点本地响。
+   你在手机上**勾掉它**就是打卡，勾的那一刻就是打卡时间。WakeUpCall 只建、只读，永远不替你勾。
+2. **iMessage**：给自己的号码回一条，内容是关键词之一（默认 `起` / `起了` / `up` / `打卡`）。
+3. **Mac**：`wakeupcall checkin`。
 
-只认起床流程开始之后到的消息，之前的不算。
+只认起床流程开始之后的信号。
 
 ## 前提（macOS）
 
@@ -55,6 +57,7 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 | `status` | 守护进程状态、今天的进度、升级阶梯 |
 | `checkin` | 本机打卡 |
 | `drill [倍率]` | 立刻演习，倍率缩放升级分钟数（默认 0.1） |
+| `doctor` | 体检：配置、chat.db 权限、提醒事项列表、定时唤醒、防睡眠、守护进程、告状收件人 |
 | `test-msg` | 给自己发一条测试消息 |
 | `log` | 跟踪守护进程日志 |
 | `stats [天]` | 最近 N 天打卡表：目标 / 打卡 / 迟到 / 告状 / 上床 |
@@ -63,7 +66,9 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 ## 目录
 
 ```
-wakeupcall/          代码（config / imsg / alarm / journal / daemon / cli）
+wakeupcall/          代码（config / imsg / reminders / alarm / journal / daemon / cli）
+helpers/             reminders.swift（EventKit 帮手，首次运行自动编译到 build/）
+tests/               状态机单元测试（python3 -m unittest discover -s tests）
 bin/wakeupcall       入口
 launchd/             plist 模板，`on` 时填入路径生成到 ~/Library/LaunchAgents
 config.example.toml  配置样例 —— 唯一需要你改的东西
@@ -74,6 +79,8 @@ logs/                打卡日志 journal.jsonl + 守护进程日志（.gitignor
 
 代码里没有任何个人默认值：号码、朋友、路径全部只从 `config.local.toml` 读。
 仓库可以直接公开。
+
+设计细节见 `ARCHITECTURE.md`。
 
 ## 设计要点
 

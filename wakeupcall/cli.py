@@ -28,6 +28,7 @@ USAGE = """用法: wakeupcall <命令>
   drill [倍率] 立刻演习一遍完整流程；倍率把升级分钟数缩放，默认 0.1（15 分钟→90 秒）。
               演习里「告状」只发给你自己，不发朋友。
   test-msg    给自己发一条测试 iMessage，验证通道
+  doctor      体检：配置、iMessage 数据库、提醒事项权限、定时唤醒、防睡眠、守护进程
   log         跟踪守护进程日志
   stats [天]  最近 N 天打卡表（默认 14）
   run         前台跑守护进程（调试用）"""
@@ -141,6 +142,47 @@ def cmd_test_msg() -> int:
     return 0
 
 
+def cmd_doctor() -> int:
+    from . import imsg, reminders
+    ok_all = True
+
+    def row(ok: bool, name: str, detail: str = "") -> None:
+        nonlocal ok_all
+        ok_all &= ok
+        print(f"  {'✅' if ok else '❌'} {name}" + (f"  —  {detail}" if detail else ""))
+
+    print("WakeUpCall 体检")
+    try:
+        cfg = load()
+        row(True, "配置", f"{CONFIG_PATH.name}，起床 {'%02d:%02d' % cfg.wake_time} {cfg.tz.key}")
+    except SystemExit as e:
+        row(False, "配置", str(e))
+        return 1
+    try:
+        row(True, "iMessage 数据库可读", f"chat.db 最新 rowid {imsg.max_rowid()}")
+    except Exception as e:                                   # noqa: BLE001
+        row(False, "iMessage 数据库可读", f"{e}（给终端授「完全磁盘访问」）")
+    if cfg.rem_enabled:
+        try:
+            ls = reminders.lists()
+            row(cfg.rem_list in ls, "提醒事项列表", f"「{cfg.rem_list}」" +
+                ("存在" if cfg.rem_list in ls else f"不存在，现有：{ls}"))
+        except Exception as e:                               # noqa: BLE001
+            row(False, "提醒事项权限", str(e))
+    sched = subprocess.run(["pmset", "-g", "sched"], capture_output=True, text=True).stdout
+    row("wakepoweron" in sched or "wake at" in sched, "定时唤醒（pmset）",
+        next((l.strip() for l in sched.splitlines() if "wake" in l), "没有排程；合盖/睡眠时不会醒"))
+    asr = subprocess.run(["pmset", "-g", "assertions"], capture_output=True, text=True).stdout
+    row("PreventSystemSleep" in asr or "PreventUserIdleSystemSleep" in asr, "防睡眠断言",
+        "有进程持有" if "Prevent" in asr else "没有（caffeinate -ism 或 nosleep on）")
+    row(bool(_pid() or _loaded()), "守护进程", f"pid {_pid()}" if _pid() else "未运行")
+    tattle = [s for s in cfg.steps if s.action == "tattle"]
+    row(all(s.to for s in tattle), "告状收件人",
+        "已填" if all(s.to for s in tattle) else "tattle.to 为空，告状那步不会发给任何人")
+    print("  结论：" + ("全部就绪" if ok_all else "有项目未就绪，见 ❌"))
+    return 0 if ok_all else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     cmd = argv[0] if argv else "status"
@@ -156,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_drill(argv[1] if len(argv) > 1 else "0.1")
     if cmd == "test-msg":
         return cmd_test_msg()
+    if cmd == "doctor":
+        return cmd_doctor()
     if cmd == "log":
         return subprocess.call(["tail", "-n", "30", "-f", str(journal.DAEMON_LOG)])
     if cmd == "stats":

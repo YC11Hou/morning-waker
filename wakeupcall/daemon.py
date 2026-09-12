@@ -14,7 +14,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta
 
-from . import imsg, journal
+from . import imsg, journal, reminders
 from .alarm import Alarm, wake_screen
 from .config import STATE_DIR, Config, Step, load
 
@@ -37,6 +37,7 @@ class Day:
         self.fired: list[int] = []               # 已执行的 escalation 下标
         self.rowid_base = 0                      # 只认此 rowid 之后的回复
         self.drill_scale: float | None = None
+        self.reminder_ids: dict = {}             # {日期: 提醒事项 id}，今天 + 明天
 
     @classmethod
     def load(cls, today: str) -> "Day":
@@ -58,15 +59,16 @@ class Day:
 
 
 class Daemon:
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, now_fn=None):
         self.cfg = cfg
+        self._now_fn = now_fn                    # 可注入的时钟（测试用）
         self.alarm = Alarm(cfg.alarm_sound, cfg.alarm_volume, cfg.alarm_interval)
         self.day = Day.load(self.now().strftime("%Y-%m-%d"))
         self.last_rowid = imsg.max_rowid()       # 启动时只看以后的消息，不翻旧账
 
     # ── 基础 ──────────────────────────────────────────────────────────
     def now(self) -> datetime:
-        return datetime.now(self.cfg.tz)
+        return self._now_fn() if self._now_fn else datetime.now(self.cfg.tz)
 
     def log(self, msg: str) -> None:
         journal.log(msg, self.now())
@@ -128,6 +130,49 @@ class Daemon:
         if self.cfg.alarm_enabled:
             self.alarm.start()
 
+    # ── 提醒事项通道 ──────────────────────────────────────────────────
+    def ensure_reminder(self, now: datetime) -> None:
+        """幂等地建好提醒事项：今天的（起床前 create_ahead_min 分钟起）和明天的（今天流程
+        结束后就建）。提前一天建的好处：iPhone 到点本地响，完全不依赖 Mac 那时醒没醒。"""
+        cfg, d = self.cfg, self.day
+        if not cfg.rem_enabled:
+            return
+        h, m = cfg.wake_time
+        hm = f"{h:02d}:{m:02d}"
+        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        wanted: list[str] = []
+        if now >= target - timedelta(minutes=cfg.rem_ahead_min) and not self.wake_passed(now):
+            wanted.append(d.date)
+        if d.wake_phase in ("done", "missed", "skipped") or self.wake_passed(now):
+            wanted.append((now + timedelta(days=1)).strftime("%Y-%m-%d"))
+        for date in wanted:
+            if date in d.reminder_ids:
+                continue
+            if datetime.strptime(date, "%Y-%m-%d").isoweekday() not in cfg.weekdays:
+                continue
+            try:
+                r = reminders.ensure(cfg.rem_list, cfg.rem_title, date, hm, cfg.tz.key,
+                                     f"起床后勾掉这条 = 打卡。目标 {hm}。不勾会一路升级到告状。")
+            except reminders.RemindersError as e:
+                self.log(f"⚠️ 提醒事项创建失败：{e}")
+                return
+            d.reminder_ids[date] = r["id"]
+            d.save()
+            self.log(f"📝 提醒事项{'已新建' if r['created'] else '已存在'}：{cfg.rem_title} {date} {hm}")
+
+    def reminder_completion(self) -> datetime | None:
+        cfg, d = self.cfg, self.day
+        if not cfg.rem_enabled or d.drill_scale:
+            return None
+        try:
+            r = reminders.status(cfg.rem_list, cfg.rem_title, d.date, cfg.tz.key)
+        except reminders.RemindersError as e:
+            self.log(f"⚠️ 提醒事项读取失败：{e}")
+            return None
+        if r.get("completed") and r.get("completion"):
+            return r["completion"].astimezone(cfg.tz)
+        return None
+
     def elapsed_min(self, now: datetime) -> float:
         started = datetime.fromisoformat(self.day.wake_started)
         return (now - started).total_seconds() / 60
@@ -161,16 +206,17 @@ class Daemon:
                       drill=drill)
         self.log(f"↑ 升级第 {i} 步：{step.action}（{step.after_min} 分钟）")
 
-    def finish(self, now: datetime, via: str) -> None:
+    def finish(self, now: datetime, via: str, at: datetime | None = None) -> None:
         d = self.day
         self.alarm.stop()
-        late = self.elapsed_min(now)
+        at = at or now
+        late = max(0.0, self.elapsed_min(at))
         d.wake_phase = "done"
         d.save()
         journal.event("checkin", now, via=via, late_min=round(late, 1), target=d.target,
                       drill=bool(d.drill_scale))
-        self.log(f"✅ 打卡成功（{via}，晚 {late:.0f} 分钟）")
-        self.notify(f"✅ 打卡成功 {now:%H:%M}，比目标 {d.target} 晚 {late:.0f} 分钟。"
+        self.log(f"✅ 打卡成功（{via}，{at:%H:%M}，晚 {late:.0f} 分钟）")
+        self.notify(f"✅ 打卡成功 {at:%H:%M}（{via}），比目标 {d.target} 晚 {late:.0f} 分钟。"
                     + ("（演习）" if d.drill_scale else ""))
 
     def miss(self, now: datetime) -> None:
@@ -221,6 +267,7 @@ class Daemon:
             self.log("🌙 上床打卡")
 
         # 起床
+        self.ensure_reminder(now)
         if d.wake_phase == "idle":
             if self.wake_due(now):
                 self.start_wake(now)
@@ -240,6 +287,9 @@ class Daemon:
                 return
             if any(self.matches(m, cfg.wake_keywords) for m in msgs):
                 self.finish(now, "iMessage")
+                return
+            if (done_at := self.reminder_completion()) and done_at >= started - timedelta(minutes=30):
+                self.finish(now, "提醒事项", at=done_at)
                 return
             el = self.elapsed_min(now)
             scale = d.drill_scale or 1.0
