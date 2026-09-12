@@ -49,6 +49,8 @@ def stats(days: int = 14) -> str:
     recs = read_all()
     by_date: dict[str, dict] = {}
     for r in recs:
+        if r.get("drill"):
+            continue                                   # 演习不进统计
         d = by_date.setdefault(r["date"], {})
         k = r["kind"]
         if k == "wake_start":
