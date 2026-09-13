@@ -1,5 +1,4 @@
-// EventKit helper for MorningWaker: ensure / status / lists. Creates and reads only; never completes or deletes.
-// ensure <list> <title> <date> <HH:MM> <tz> [notes] [repeat]   repeat = "daily" (default) or ISO weekdays "1,2,5"
+// EventKit helper: `ensure <list> <title> <date> <HH:MM> <tz> [notes] [repeat]`, `status`, `lists`; creates and reads only.
 import EventKit
 import Foundation
 
