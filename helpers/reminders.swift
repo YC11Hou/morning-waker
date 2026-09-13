@@ -1,4 +1,5 @@
 // EventKit helper for MorningWaker: ensure / status / lists. Creates and reads only; never completes or deletes.
+// ensure <list> <title> <date> <HH:MM> <tz> [notes] [repeat]   repeat = "daily" (default) or ISO weekdays "1,2,5"
 import EventKit
 import Foundation
 
@@ -39,27 +40,53 @@ func dayRange(tzId: String) -> (Date, Date) {
     return (start, start.addingTimeInterval(86400))
 }
 
-// Find the reminder with this title due on that day, completed or not.
-func find(tzId: String) -> EKReminder? {
-    let (start, end) = dayRange(tzId: tzId)
-    let s2 = DispatchSemaphore(value: 0); var found: EKReminder?
+func candidates() -> [EKReminder] {
+    let s2 = DispatchSemaphore(value: 0); var out: [EKReminder] = []
     store.fetchReminders(matching: store.predicateForReminders(in: [cal])) { rs in
-        for r in rs ?? [] where r.title == title {
-            if let due = r.dueDateComponents?.date, due >= start, due < end { found = r; break }
-        }
-        s2.signal()
+        out = (rs ?? []).filter { $0.title == title }; s2.signal()
     }
     s2.wait()
-    return found
+    return out
+}
+
+// A reminder covers the day if it is due that day, or it is an open repeating series that started on or before it.
+func existing(tzId: String) -> EKReminder? {
+    let (start, end) = dayRange(tzId: tzId)
+    var series: EKReminder?
+    for r in candidates() {
+        guard let due = r.dueDateComponents?.date else { continue }
+        if due >= start && due < end { return r }
+        guard !r.isCompleted, let rules = r.recurrenceRules, !rules.isEmpty, due < end else { continue }
+        if let last = rules[0].recurrenceEnd?.endDate, last < start { continue }
+        series = r
+    }
+    return series
+}
+
+// The occurrence completed on that day, if any; the Reminders app keeps each completed occurrence as its own item.
+func completedOn(tzId: String) -> EKReminder? {
+    let (start, end) = dayRange(tzId: tzId)
+    return candidates().first { r in
+        guard let c = r.completionDate else { return false }
+        return c >= start && c < end
+    }
+}
+
+func rule(_ spec: String) -> EKRecurrenceRule {
+    if spec == "daily" { return EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: nil) }
+    let days = spec.split(separator: ",").compactMap { Int($0) }.map { EKRecurrenceDayOfWeek(EKWeekday(rawValue: $0 % 7 + 1)!) }
+    return EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil,
+                            monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: nil)
 }
 
 let iso = ISO8601DateFormatter()
 switch args[1] {
 case "status":
     let tz = args[5]
-    if let r = find(tzId: tz) {
-        json(["exists": true, "completed": r.isCompleted,
-              "completion": r.completionDate.map { iso.string(from: $0) } ?? NSNull(),
+    let done = completedOn(tzId: tz), open = existing(tzId: tz)
+    if let r = done ?? open {
+        json(["exists": true, "completed": done != nil,
+              "completion": done?.completionDate.map { iso.string(from: $0) } ?? NSNull(),
               "id": r.calendarItemIdentifier])
     } else {
         json(["exists": false, "completed": false, "completion": NSNull()])
@@ -68,10 +95,11 @@ case "ensure":
     guard args.count >= 7 else { fail("ensure needs HH:MM and tz", 64) }
     let hm = args[5].split(separator: ":").compactMap { Int($0) }, tz = args[6]
     guard hm.count == 2 else { fail("bad time", 64) }
-    if let r = find(tzId: tz) { json(["id": r.calendarItemIdentifier, "created": false]); exit(0) }
+    if let r = existing(tzId: tz) { json(["id": r.calendarItemIdentifier, "created": false]); exit(0) }
     let r = EKReminder(eventStore: store)
     r.calendar = cal; r.title = title
     if args.count >= 8 { r.notes = args[7] }
+    r.addRecurrenceRule(rule(args.count >= 9 ? args[8] : "daily"))
     var c = DateComponents(); c.calendar = Calendar(identifier: .gregorian)
     c.timeZone = TimeZone(identifier: tz)
     c.year = dayParts[0]; c.month = dayParts[1]; c.day = dayParts[2]; c.hour = hm[0]; c.minute = hm[1]

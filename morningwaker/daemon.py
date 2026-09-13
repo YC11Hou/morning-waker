@@ -123,12 +123,13 @@ class Daemon:
             self.alarm.start()
 
     def ensure_reminder(self, now: datetime) -> None:
-        """Idempotently create today's reminder (ahead of wake time) and tomorrow's (after today ends)."""
+        """Make sure a repeating reminder covers today (ahead of wake time) and tomorrow (after today ends)."""
         cfg, d = self.cfg, self.day
         if not cfg.rem_enabled:
             return
         h, m = cfg.wake_time
         hm = f"{h:02d}:{m:02d}"
+        repeat = "daily" if len(cfg.weekdays) == 7 else ",".join(str(x) for x in sorted(cfg.weekdays))
         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
         wanted: list[str] = []
         if now >= target - timedelta(minutes=cfg.rem_ahead_min) and not self.wake_passed(now):
@@ -142,7 +143,7 @@ class Daemon:
                 continue
             try:
                 r = reminders.ensure(cfg.rem_list, cfg.rem_title, date, hm, cfg.tz.key,
-                                     f"Complete this reminder after waking up = check-in. Target {hm}.")
+                                     f"Complete this reminder after waking up = check-in. Target {hm}.", repeat)
             except reminders.RemindersError as e:
                 self.log(f"WARN reminder create failed: {e}")
                 return

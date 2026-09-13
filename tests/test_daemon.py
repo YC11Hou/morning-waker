@@ -87,8 +87,8 @@ class Harness:
     def _fetch(self, since, limit=100):
         return [(r, t) for r, t in self.inbox if r > since]
 
-    def _ensure(self, lst, title, date, hm, tz, notes=""):
-        self.created.append(date); self.rem.setdefault(date, {"exists": True, "completed": False, "completion": None})
+    def _ensure(self, lst, title, date, hm, tz, notes="", repeat="daily"):
+        self.created.append(date); self.repeat = repeat; self.rem.setdefault(date, {"exists": True, "completed": False, "completion": None})
         return {"id": "id-" + date, "created": True}
 
     def _status(self, lst, title, date, tz):
@@ -114,6 +114,7 @@ class DaemonTests(unittest.TestCase):
         h.tick(); self.assertEqual(h.created, [])
         h.tick(60); self.assertEqual(h.created, ["2026-09-14"])
         h.tick(1); self.assertEqual(h.created, ["2026-09-14"])
+        self.assertEqual(h.repeat, "daily")
 
     def test_wake_starts_at_target_and_first_step_fires(self):
         h = self.h

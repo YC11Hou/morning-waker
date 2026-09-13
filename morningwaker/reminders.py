@@ -37,13 +37,14 @@ def lists() -> list[str]:
     return _run("lists")
 
 
-def ensure(list_name: str, title: str, date: str, hm: str, tz: str, notes: str = "") -> dict:
-    """Create the reminder for that date if missing; return {id, created}."""
-    return _run("ensure", list_name, title, date, hm, tz, notes)
+def ensure(list_name: str, title: str, date: str, hm: str, tz: str, notes: str = "",
+           repeat: str = "daily") -> dict:
+    """Create a repeating reminder starting that date unless one already covers it; return {id, created}."""
+    return _run("ensure", list_name, title, date, hm, tz, notes, repeat)
 
 
 def status(list_name: str, title: str, date: str, tz: str) -> dict:
-    """Return {exists, completed, completion (datetime or None), id}."""
+    """Return {exists, completed, completion (datetime or None), id} for the occurrence on that date."""
     r = _run("status", list_name, title, date, tz)
     if r.get("completion"):
         r["completion"] = datetime.fromisoformat(r["completion"].replace("Z", "+00:00"))

@@ -19,7 +19,7 @@ remind_at = "23:30"
 keywords = ["bed", "sleep", "goodnight"]
 
 [reminders]
-# A reminder is created in this existing list ahead of wake time; completing it on your phone is the check-in.
+# A daily repeating reminder is created in this existing list; completing the day's occurrence on your phone is the check-in.
 enabled = true
 list = "Reminders"
 title = "☀️ Wake-up check-in"

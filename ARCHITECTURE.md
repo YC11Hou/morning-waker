@@ -34,7 +34,7 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 
 ## Check-in channels, in priority order
 
-1. **Reminders**: the daemon creates the next day's reminder ahead of time with an alarm at wake time, so the iPhone fires it without the Mac. Completing it syncs back; `completionDate` is the check-in time. The daemon never completes or deletes.
+1. **Reminders**: the daemon creates one daily repeating reminder with an alarm at wake time, so the iPhone fires it without the Mac. Completing an occurrence syncs back; the occurrence whose `completionDate` falls on that day is the check-in. The helper treats an open series as covering every later day, so it never creates a second one.
 2. **iMessage keyword**: the whole message must match a keyword. Messages starting with one of the daemon's own prefixes are ignored.
 3. **Local file**: `morningwaker checkin` touches `state/checkin`; its mtime must be after the session start.
 
@@ -42,7 +42,7 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 
 - **Explicit timezone** from `[general].timezone` via `zoneinfo`; the system timezone is ignored.
 - **Fork from the terminal, not launchd**, so the daemon inherits the terminal's Full Disk Access and Automation permissions. Cost: rerun `on` after a reboot. `on --launchd` is available for users who grant Python those permissions.
-- **Sleeping Mac**: the reminder is created a day ahead so the phone fires regardless; `pmset repeat wakeorpoweron` wakes the Mac for the alarm and escalation.
+- **Sleeping Mac**: the reminder repeats on the phone regardless of the Mac; `pmset repeat wakeorpoweron` wakes the Mac for the alarm and escalation.
 - **Restart safety**: `state/day.json` stores phase, fired steps, and the rowid baseline; an active session resumes ringing after a restart.
 - **Late start**: the window is `[wake time, wake time + hard_timeout]`; starting after it marks the day skipped instead of ringing.
 - **Safe drills**: `drill` scales the ladder, sends tattles to yourself, and logs shell steps instead of running them.
