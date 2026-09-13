@@ -1,4 +1,4 @@
-# WakeUpCall 架构
+# MorningWaker 架构
 
 ## 一句话
 
@@ -33,7 +33,8 @@
 | `alarm.py` | Mac 本机循环响铃；拉音量、停铃还原；`caffeinate -u` 点亮屏幕 | afplay、osascript |
 | `journal.py` | 事件日志、守护进程日志、`stats` 表 | — |
 | `web.py` + `web/index.html` | 本地仪表盘：只读 `/api/days`（journal 按日聚合）与 `/api/status`；月历 + 统计 + 每日时间线 | 127.0.0.1 |
-| `cli.py` | `on/off/status/checkin/drill/doctor/test-msg/log/stats/run` | launchctl（可选） |
+| `cli.py` | `on/off/status/checkin/drill/doctor/test-msg/probe/log/stats/dash/run` | launchctl（可选） |
+| `probe.py` | 只读探针：某天有没有打卡（提醒事项 completionDate / chat.db 关键词 / day.json），stdout 只输出 0/1 | 同上，只读 |
 
 ## 三个打卡口，优先级从上到下
 
@@ -41,7 +42,7 @@
    iPhone 到点**本地**响提醒，不依赖 Mac。用户勾掉 → iCloud 同步到 Mac → `completionDate` 即打卡时刻。
    守护进程永远不勾、不删。
 2. **iMessage 关键词**：用户在手机上回「起」等词。整条消息精确匹配，自己发出的消息（六个前缀）跳过。
-3. **本机文件**：`wakeupcall checkin` touch `state/checkin`，mtime 必须晚于流程开始。
+3. **本机文件**：`morningwaker checkin` touch `state/checkin`，mtime 必须晚于流程开始。
 
 打卡时间：提醒事项用它自己的 `completionDate`；另两种用守护进程读到的时刻。
 
@@ -50,7 +51,7 @@
 - **时区显式**：`[general].timezone`，用 `zoneinfo`，不信系统时区。
 - **守护进程从终端 fork 而不是 launchd**：launchd 起的 Python 没有「完全磁盘访问」和「自动化」
   权限，读不了 chat.db、发不了 iMessage；从终端 fork 继承终端的 TCC 授权。代价是重启 Mac 后要
-  手动 `wakeupcall on`。`on --launchd` 保留给愿意给 Python 授权的人。
+  手动 `morningwaker on`。`on --launchd` 保留给愿意给 Python 授权的人。
 - **Mac 睡着怎么办**：提醒事项那条前一天就建好，iPhone 自己会响；`pmset repeat wakeorpoweron`
   让 Mac 在起床前醒来接管响铃和升级。两条腿。
 - **重启不丢**：`state/day.json` 记录阶段、已升级步骤、rowid 基线；重启后 active 继续响铃。

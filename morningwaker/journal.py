@@ -24,7 +24,7 @@ def log(msg: str, now: datetime) -> None:
     LOG_DIR.mkdir(exist_ok=True)
     line = f"{now:%Y-%m-%d %H:%M:%S} {msg}"
     print(line, flush=True)
-    if os.environ.get("WAKEUPCALL_DAEMON") == "1":   # launchd 已把 stdout 接到同一个文件
+    if os.environ.get("MORNINGWAKER_DAEMON") == "1":   # launchd 已把 stdout 接到同一个文件
         return
     with open(DAEMON_LOG, "a", encoding="utf-8") as f:
         f.write(line + "\n")

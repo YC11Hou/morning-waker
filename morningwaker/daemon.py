@@ -2,7 +2,7 @@
 
 状态存 state/day.json（按日期），进程重启不丢：
   wake_phase: idle | active | done | missed
-一天只跑一次起床流程。打卡 = 手机回关键词（iMessage）或本机 `wakeupcall checkin`。
+一天只跑一次起床流程。打卡 = 手机回关键词（iMessage）或本机 `morningwaker checkin`。
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from .alarm import Alarm, wake_screen
 from .config import STATE_DIR, Config, Step, load
 
 DAY_FILE = STATE_DIR / "day.json"
-CHECKIN_FILE = STATE_DIR / "checkin"       # `wakeupcall checkin` touch 这个文件
-DRILL_FILE = STATE_DIR / "drill"           # `wakeupcall drill` 写入：演习倍率
+CHECKIN_FILE = STATE_DIR / "checkin"       # `morningwaker checkin` touch 这个文件
+DRILL_FILE = STATE_DIR / "drill"           # `morningwaker drill` 写入：演习倍率
 POLL_SEC = 10
 # 自己发出去的消息一律以这些开头；读 chat.db 时见到就跳过（自发自收通道防自激）
 SELF_MARKS = ("⏰", "✅", "❌", "🌙", "📣", "🎯")
@@ -300,7 +300,7 @@ class Daemon:
                 self.miss(now)
 
     def run(self) -> None:
-        self.log(f"▶️ WakeUpCall 启动。起床 {'%02d:%02d' % self.cfg.wake_time}，"
+        self.log(f"▶️ MorningWaker 启动。起床 {'%02d:%02d' % self.cfg.wake_time}，"
                  f"时区 {self.cfg.tz.key}，从 rowid={self.last_rowid} 之后监听。")
         try:
             while True:

@@ -1,9 +1,9 @@
-# WakeUpCall ☎️ 叫早服务
+# MorningWaker 🌅 叫早服务
 
 到点必须**打卡**，不打卡就一路升级：手机催 → 再催 → **给朋友发消息告状**。
 像酒店的 wake-up call：电话一直打到你接为止。也像上班打卡：没人替你按。
 
-解决的问题不是"闹钟不够响"，而是**闹钟被手一挥就掐了**。WakeUpCall 要求你
+解决的问题不是"闹钟不够响"，而是**闹钟被手一挥就掐了**。MorningWaker 要求你
 清醒地做一个动作（在手机上回一个字），否则后果会发生在你身上之外的地方。
 
 ## 它怎么叫你
@@ -23,9 +23,9 @@
 ## 打卡方式（三个口，任一即可）
 
 1. **提醒事项（主）**：每天提前一天在 macOS 提醒事项里建好一条「☀️ 起床打卡」，iPhone 到点本地响。
-   你在手机上**勾掉它**就是打卡，勾的那一刻就是打卡时间。WakeUpCall 只建、只读，永远不替你勾。
+   你在手机上**勾掉它**就是打卡，勾的那一刻就是打卡时间。MorningWaker 只建、只读，永远不替你勾。
 2. **iMessage**：给自己的号码回一条，内容是关键词之一（默认 `起` / `起了` / `up` / `打卡`）。
-3. **Mac**：`wakeupcall checkin`。
+3. **Mac**：`morningwaker checkin`。
 
 只认起床流程开始之后的信号。
 
@@ -39,15 +39,17 @@
 
 ## 安装
 
+完整教程（权限怎么给、短信怎么读到、哪些文件不能公开）见 **[SETUP.md](SETUP.md)**。
+
 ```bash
-git clone <this repo> ~/Desktop/Projects/wakeupcall && cd ~/Desktop/Projects/wakeupcall
+git clone https://github.com/YC11Hou/morning-waker.git && cd morning-waker
 cp config.example.toml config.local.toml     # 填自己的手机号、朋友号码、时间
-bin/wakeupcall test-msg                      # 先验证 iMessage 通道：手机应收到一条
-bin/wakeupcall on                            # 后台常驻（从终端 fork，继承权限；重启 Mac 后要再跑一次）
-bin/wakeupcall drill                         # 演习：整条链路走一遍（15 分钟压成 90 秒，告状只发给自己）
+bin/morningwaker test-msg                      # 先验证 iMessage 通道：手机应收到一条
+bin/morningwaker on                            # 后台常驻（从终端 fork，继承权限；重启 Mac 后要再跑一次）
+bin/morningwaker drill                         # 演习：整条链路走一遍（15 分钟压成 90 秒，告状只发给自己）
 ```
 
-把 `bin/` 加进 PATH 或 `ln -s $PWD/bin/wakeupcall ~/bin/`。
+把 `bin/` 加进 PATH 或 `ln -s $PWD/bin/morningwaker ~/bin/`。
 
 ## 命令
 
@@ -59,6 +61,7 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 | `drill [倍率]` | 立刻演习，倍率缩放升级分钟数（默认 0.1） |
 | `doctor` | 体检：配置、chat.db 权限、提醒事项列表、定时唤醒、防睡眠、守护进程、告状收件人 |
 | `test-msg` | 给自己发一条测试消息 |
+| `probe [日期]` | 探针：那天有没有打卡？只读、不发任何消息，stdout 只打印 `1` / `0`（默认今天） |
 | `log` | 跟踪守护进程日志 |
 | `stats [天]` | 最近 N 天打卡表（终端） |
 | `dash [端口]` | 本地仪表盘：月历按结果上色（准时 / 迟到 / 严重迟到 / 未打卡）、统计块、点某天看时间线。默认 http://127.0.0.1:5180 |
@@ -67,14 +70,14 @@ bin/wakeupcall drill                         # 演习：整条链路走一遍（
 ## 目录
 
 ```
-wakeupcall/          代码（config / imsg / reminders / alarm / journal / daemon / cli / web）
+morningwaker/          代码（config / imsg / reminders / alarm / journal / daemon / cli / web / probe）
 web/                 仪表盘静态页（无构建、无依赖，主题跟随系统）
 helpers/             reminders.swift（EventKit 帮手，首次运行自动编译到 build/）
 tests/               状态机单元测试（python3 -m unittest discover -s tests）
-bin/wakeupcall       入口
+bin/morningwaker       入口
 launchd/             plist 模板，`on` 时填入路径生成到 ~/Library/LaunchAgents
 config.example.toml  配置样例 —— 唯一需要你改的东西
-config.local.toml    你的真实配置（.gitignore，含号码）
+config.local.toml    你的真实配置（.gitignore，含号码）—— 个人信息只在这里，见 SETUP.md 第 6 节
 state/               当天进度（.gitignore）
 logs/                打卡日志 journal.jsonl + 守护进程日志（.gitignore）
 ```
@@ -96,7 +99,7 @@ logs/                打卡日志 journal.jsonl + 守护进程日志（.gitignor
 ## 和其他 iMessage 自动化共存
 
 如果你还有别的程序在读同一个 chat.db 并回复消息（比如一个 iMessage 遥控 agent），
-让它忽略以上六个前缀开头的消息，否则它会把 WakeUpCall 的催促当成提问。
+让它忽略以上六个前缀开头的消息，否则它会把 MorningWaker 的催促当成提问。
 
 ## License
 

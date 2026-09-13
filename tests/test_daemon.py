@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
 TMP = Path(tempfile.mkdtemp())
-os.environ["WAKEUPCALL_CONFIG"] = str(TMP / "cfg.toml")
+os.environ["MORNINGWAKER_CONFIG"] = str(TMP / "cfg.toml")
 (TMP / "cfg.toml").write_text('''
 [general]
 timezone = "Asia/Singapore"
@@ -43,11 +43,11 @@ text = "{name} late {late}"
 name = "N"
 ''')
 
-import wakeupcall.config as C  # noqa: E402
+import morningwaker.config as C  # noqa: E402
 C.STATE_DIR = TMP / "state"; C.LOG_DIR = TMP / "logs"
-import wakeupcall.journal as J  # noqa: E402
+import morningwaker.journal as J  # noqa: E402
 J.LOG_DIR = C.LOG_DIR; J.JOURNAL = C.LOG_DIR / "journal.jsonl"; J.DAEMON_LOG = C.LOG_DIR / "d.log"
-import wakeupcall.daemon as D  # noqa: E402
+import morningwaker.daemon as D  # noqa: E402
 D.STATE_DIR = C.STATE_DIR
 D.DAY_FILE = C.STATE_DIR / "day.json"; D.CHECKIN_FILE = C.STATE_DIR / "checkin"; D.DRILL_FILE = C.STATE_DIR / "drill"
 

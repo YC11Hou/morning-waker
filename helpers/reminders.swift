@@ -1,4 +1,4 @@
-// WakeUpCall 的 EventKit 帮手（编译成 build/reminders）。只做三件事：
+// MorningWaker 的 EventKit 帮手（编译成 build/reminders）。只做三件事：
 //   ensure <list> <title> <yyyy-mm-dd> <HH:MM> <tz> [notes]   当天没有同名提醒就新建；输出 JSON {id}
 //   status <list> <title> <yyyy-mm-dd> <tz>                    输出 JSON {exists, completed, completion}
 //   lists                                                      输出所有提醒列表名

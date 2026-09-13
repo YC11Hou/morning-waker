@@ -1,4 +1,4 @@
-# WakeUpCall 配置样例。复制成 config.local.toml 再填（config.local.toml 已 .gitignore）。
+# MorningWaker 配置样例。复制成 config.local.toml 再填（config.local.toml 已 .gitignore）。
 #   cp config.example.toml config.local.toml
 # 所有时间都按 [general].timezone 解释，和这台 Mac 的系统时区无关。
 
@@ -24,7 +24,7 @@ keywords = ["睡", "晚安", "sleep"]      # 回这些词 = 记录实际上床�
 [reminders]
 # 主打卡口：每天起床前 create_ahead_min 分钟，在 macOS 提醒事项的 list 里新建一条 title，
 # 到点 iPhone 本地响提醒（不依赖 Mac）。你在手机上勾掉它 = 打卡，勾的时刻就是打卡时间。
-# WakeUpCall 只新建、只读，永远不替你勾。
+# MorningWaker 只新建、只读，永远不替你勾。
 enabled = true
 list = "重要事项"
 title = "☀️ 起床打卡"

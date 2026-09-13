@@ -1,4 +1,4 @@
-"""wakeupcall 命令行：on / off / status / checkin / drill / test-msg / log / stats / run"""
+"""morningwaker 命令行：on / off / status / checkin / drill / test-msg / log / stats / run"""
 from __future__ import annotations
 
 import getpass
@@ -15,11 +15,11 @@ from .daemon import CHECKIN_FILE, DAY_FILE, DRILL_FILE
 
 PIDFILE = STATE_DIR / "daemon.pid"
 
-LABEL = f"com.{getpass.getuser()}.wakeupcall"
+LABEL = f"com.{getpass.getuser()}.morningwaker"
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 PY = sys.executable
 
-USAGE = """用法: wakeupcall <命令>
+USAGE = """用法: morningwaker <命令>
   on          后台启动守护进程（从当前终端 fork，继承终端的磁盘访问/自动化权限）
   on --launchd 改用 launchd 常驻（开机自启）。需要先给 Python 本体授「完全磁盘访问」
   off         停止（两种方式都停）
@@ -28,6 +28,7 @@ USAGE = """用法: wakeupcall <命令>
   drill [倍率] 立刻演习一遍完整流程；倍率把升级分钟数缩放，默认 0.1（15 分钟→90 秒）。
               演习里「告状」只发给你自己，不发朋友。
   test-msg    给自己发一条测试 iMessage，验证通道
+  probe [日期] 探针：那天有没有打卡？只读、不发消息，stdout 只打印 1（有）或 0（无），默认今天
   doctor      体检：配置、iMessage 数据库、提醒事项权限、定时唤醒、防睡眠、守护进程
   log         跟踪守护进程日志
   stats [天]  最近 N 天打卡表（默认 14）
@@ -36,7 +37,7 @@ USAGE = """用法: wakeupcall <命令>
 
 
 def _plist() -> str:
-    tmpl = (ROOT / "launchd" / "wakeupcall.plist.template").read_text()
+    tmpl = (ROOT / "launchd" / "morningwaker.plist.template").read_text()
     return (tmpl.replace("{{LABEL}}", LABEL).replace("{{PYTHON}}", PY)
                 .replace("{{ROOT}}", str(ROOT)).replace("{{LOG}}", str(journal.DAEMON_LOG)))
 
@@ -63,24 +64,24 @@ def cmd_on(launchd: bool = False) -> int:
         if pid := _pid():
             print(f"✅ 已经在跑了（pid {pid}）")
             return 0
-        env = {**os.environ, "PYTHONPATH": str(ROOT), "WAKEUPCALL_DAEMON": "1"}
+        env = {**os.environ, "PYTHONPATH": str(ROOT), "MORNINGWAKER_DAEMON": "1"}
         with open(journal.DAEMON_LOG, "a") as out:
-            p = subprocess.Popen([PY, "-m", "wakeupcall.daemon"], cwd=ROOT, env=env,
+            p = subprocess.Popen([PY, "-m", "morningwaker.daemon"], cwd=ROOT, env=env,
                                  stdout=out, stderr=subprocess.STDOUT,
                                  stdin=subprocess.DEVNULL, start_new_session=True)
         PIDFILE.write_text(str(p.pid))
         time.sleep(2)
         if _pid():
-            print(f"✅ WakeUpCall 已启动（pid {p.pid}）\n   日志：wakeupcall log ／ 状态：wakeupcall status")
+            print(f"✅ MorningWaker 已启动（pid {p.pid}）\n   日志：morningwaker log ／ 状态：morningwaker status")
             return 0
-        print("❌ 启动失败，看 wakeupcall log", file=sys.stderr)
+        print("❌ 启动失败，看 morningwaker log", file=sys.stderr)
         return 1
     if _loaded():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
     PLIST.write_text(_plist())
     subprocess.run(["launchctl", "load", str(PLIST)], check=True)
     time.sleep(1.5)
-    print(f"✅ WakeUpCall 已启动（launchd {LABEL}）\n   日志：wakeupcall log ／ 状态：wakeupcall status")
+    print(f"✅ MorningWaker 已启动（launchd {LABEL}）\n   日志：morningwaker log ／ 状态：morningwaker status")
     return 0
 
 
@@ -92,7 +93,7 @@ def cmd_off() -> int:
     if PLIST.exists():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
         PLIST.unlink()
-    print("🛑 WakeUpCall 已停止并卸载")
+    print("🛑 MorningWaker 已停止并卸载")
     return 0
 
 
@@ -127,18 +128,18 @@ def cmd_checkin() -> int:
 
 def cmd_drill(scale: str = "0.1") -> int:
     if not (_pid() or _loaded()):
-        print("守护进程没在跑，先 wakeupcall on", file=sys.stderr)
+        print("守护进程没在跑，先 morningwaker on", file=sys.stderr)
         return 1
     STATE_DIR.mkdir(exist_ok=True)
     DRILL_FILE.write_text(scale)
-    print(f"🎯 演习已触发（倍率 {scale}）。手机会收到消息，Mac 会响铃；回「起」或 wakeupcall checkin 结束。")
+    print(f"🎯 演习已触发（倍率 {scale}）。手机会收到消息，Mac 会响铃；回「起」或 morningwaker checkin 结束。")
     return 0
 
 
 def cmd_test_msg() -> int:
     from . import imsg
     cfg = load()
-    v = imsg.send(f"🎯 WakeUpCall 通道测试 {datetime.now(cfg.tz):%H:%M}", cfg.self_number)
+    v = imsg.send(f"🎯 MorningWaker 通道测试 {datetime.now(cfg.tz):%H:%M}", cfg.self_number)
     print(f"✅ 已发（变体 {v}），看手机有没有横幅。")
     return 0
 
@@ -152,7 +153,7 @@ def cmd_doctor() -> int:
         ok_all &= ok
         print(f"  {'✅' if ok else '❌'} {name}" + (f"  —  {detail}" if detail else ""))
 
-    print("WakeUpCall 体检")
+    print("MorningWaker 体检")
     try:
         cfg = load()
         row(True, "配置", f"{CONFIG_PATH.name}，起床 {'%02d:%02d' % cfg.wake_time} {cfg.tz.key}")
@@ -201,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_test_msg()
     if cmd == "doctor":
         return cmd_doctor()
+    if cmd == "probe":
+        from .probe import main as probe_main
+        return probe_main(argv[1:])
     if cmd == "log":
         return subprocess.call(["tail", "-n", "30", "-f", str(journal.DAEMON_LOG)])
     if cmd == "stats":

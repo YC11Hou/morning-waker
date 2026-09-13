@@ -7,13 +7,13 @@
 	<array>
 		<string>{{PYTHON}}</string>
 		<string>-m</string>
-		<string>wakeupcall.daemon</string>
+		<string>morningwaker.daemon</string>
 	</array>
 	<key>WorkingDirectory</key><string>{{ROOT}}</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PYTHONPATH</key><string>{{ROOT}}</string>
-		<key>WAKEUPCALL_DAEMON</key><string>1</string>
+		<key>MORNINGWAKER_DAEMON</key><string>1</string>
 	</dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>

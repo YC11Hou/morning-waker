@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = Path(os.environ.get("WAKEUPCALL_CONFIG", ROOT / "config.local.toml"))
+CONFIG_PATH = Path(os.environ.get("MORNINGWAKER_CONFIG", ROOT / "config.local.toml"))
 STATE_DIR = ROOT / "state"
 LOG_DIR = ROOT / "logs"
 

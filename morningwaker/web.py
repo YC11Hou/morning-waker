@@ -61,7 +61,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def serve(port: int = 5180) -> None:
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"WakeUpCall 仪表盘：http://127.0.0.1:{port}  （Ctrl+C 停止）")
+    print(f"MorningWaker 仪表盘：http://127.0.0.1:{port}  （Ctrl+C 停止）")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
