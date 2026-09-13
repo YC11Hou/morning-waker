@@ -1,9 +1,4 @@
-"""常驻循环：每 10 秒看一眼时间和 chat.db，跑「睡前提醒 → 起床打卡 → 升级」状态机。
-
-状态存 state/day.json（按日期），进程重启不丢：
-  wake_phase: idle | active | done | missed
-一天只跑一次起床流程。打卡 = 手机回关键词（iMessage）或本机 `morningwaker checkin`。
-"""
+"""Main loop: every 10 s run the bedtime-reminder / wake-check-in / escalation state machine."""
 from __future__ import annotations
 
 import json
@@ -19,10 +14,10 @@ from .alarm import Alarm, wake_screen
 from .config import STATE_DIR, Config, Step, load
 
 DAY_FILE = STATE_DIR / "day.json"
-CHECKIN_FILE = STATE_DIR / "checkin"       # `morningwaker checkin` touch 这个文件
-DRILL_FILE = STATE_DIR / "drill"           # `morningwaker drill` 写入：演习倍率
+CHECKIN_FILE = STATE_DIR / "checkin"
+DRILL_FILE = STATE_DIR / "drill"
 POLL_SEC = 10
-# 自己发出去的消息一律以这些开头；读 chat.db 时见到就跳过（自发自收通道防自激）
+# Every outgoing message starts with one of these; incoming rows with them are ours and skipped.
 SELF_MARKS = ("⏰", "✅", "❌", "🌙", "📣", "🎯")
 
 
@@ -32,12 +27,12 @@ class Day:
         self.bed_reminded = False
         self.bed_checkin: str | None = None
         self.wake_phase = "idle"
-        self.wake_started: str | None = None     # ISO
+        self.wake_started: str | None = None
         self.target: str = ""
-        self.fired: list[int] = []               # 已执行的 escalation 下标
-        self.rowid_base = 0                      # 只认此 rowid 之后的回复
+        self.fired: list[int] = []
+        self.rowid_base = 0
         self.drill_scale: float | None = None
-        self.reminder_ids: dict = {}             # {日期: 提醒事项 id}，今天 + 明天
+        self.reminder_ids: dict = {}
 
     @classmethod
     def load(cls, today: str) -> "Day":
@@ -61,12 +56,12 @@ class Day:
 class Daemon:
     def __init__(self, cfg: Config, now_fn=None):
         self.cfg = cfg
-        self._now_fn = now_fn                    # 可注入的时钟（测试用）
+        self._now_fn = now_fn
         self.alarm = Alarm(cfg.alarm_sound, cfg.alarm_volume, cfg.alarm_interval)
         self.day = Day.load(self.now().strftime("%Y-%m-%d"))
-        self.last_rowid = imsg.max_rowid()       # 启动时只看以后的消息，不翻旧账
+        # Only messages newer than this rowid are considered; old ones are never replayed.
+        self.last_rowid = imsg.max_rowid()
 
-    # ── 基础 ──────────────────────────────────────────────────────────
     def now(self) -> datetime:
         return self._now_fn() if self._now_fn else datetime.now(self.cfg.tz)
 
@@ -77,15 +72,14 @@ class Daemon:
         try:
             imsg.send(text, self.cfg.self_number)
         except RuntimeError as e:
-            self.log(f"⚠️ {e}")
+            self.log(f"WARN {e}")
 
-    # ── 收消息 ────────────────────────────────────────────────────────
     def incoming(self) -> list[str]:
-        """新到的、不是自己发的消息正文（小写、去空白）。"""
+        """Return new inbound message bodies (lowercased, stripped), skipping our own."""
         try:
             rows = imsg.fetch_since(self.last_rowid)
-        except Exception as e:                       # noqa: BLE001  chat.db 忙就下轮再读
-            self.log(f"⚠️ chat.db 读取失败：{e}")
+        except Exception as e:  # noqa: BLE001
+            self.log(f"WARN chat.db read failed: {e}")
             return []
         out = []
         for rowid, text in rows:
@@ -100,13 +94,11 @@ class Daemon:
 
     @staticmethod
     def matches(text: str, keywords: list[str]) -> bool:
-        t = re.sub(r"[\s!！。.,，~～]+$", "", text)
+        t = re.sub(r"[\s!\uff01\u3002.,\uff0c~\uff5e]+$", "", text)
         return t in keywords
 
-    # ── 起床流程 ──────────────────────────────────────────────────────
     def wake_due(self, now: datetime) -> bool:
-        """到点了、且还在 hard_timeout 窗口内。守护进程若在窗口之后才启动（比如
-        下午装的），今天直接跳过，不能一启动就响铃。"""
+        """True when inside [wake time, wake time + hard_timeout) on an enabled weekday."""
         h, m = self.cfg.wake_time
         if now.isoweekday() not in self.cfg.weekdays:
             return False
@@ -125,15 +117,13 @@ class Daemon:
         d.fired, d.rowid_base, d.drill_scale = [], imsg.max_rowid(), drill_scale
         d.save()
         journal.event("wake_start", now, target=d.target, drill=bool(drill_scale))
-        self.log(f"⏰ 起床流程开始（目标 {d.target}{'，演习' if drill_scale else ''}）")
+        self.log(f"Wake session started (target {d.target}{', drill' if drill_scale else ''})")
         wake_screen()
         if self.cfg.alarm_enabled:
             self.alarm.start()
 
-    # ── 提醒事项通道 ──────────────────────────────────────────────────
     def ensure_reminder(self, now: datetime) -> None:
-        """幂等地建好提醒事项：今天的（起床前 create_ahead_min 分钟起）和明天的（今天流程
-        结束后就建）。提前一天建的好处：iPhone 到点本地响，完全不依赖 Mac 那时醒没醒。"""
+        """Idempotently create today's reminder (ahead of wake time) and tomorrow's (after today ends)."""
         cfg, d = self.cfg, self.day
         if not cfg.rem_enabled:
             return
@@ -152,13 +142,13 @@ class Daemon:
                 continue
             try:
                 r = reminders.ensure(cfg.rem_list, cfg.rem_title, date, hm, cfg.tz.key,
-                                     f"起床后勾掉这条 = 打卡。目标 {hm}。不勾会一路升级到告状。")
+                                     f"Complete this reminder after waking up = check-in. Target {hm}.")
             except reminders.RemindersError as e:
-                self.log(f"⚠️ 提醒事项创建失败：{e}")
+                self.log(f"WARN reminder create failed: {e}")
                 return
             d.reminder_ids[date] = r["id"]
             d.save()
-            self.log(f"📝 提醒事项{'已新建' if r['created'] else '已存在'}：{cfg.rem_title} {date} {hm}")
+            self.log(f"Reminder {'created' if r['created'] else 'exists'}: {cfg.rem_title} {date} {hm}")
 
     def reminder_completion(self) -> datetime | None:
         cfg, d = self.cfg, self.day
@@ -167,7 +157,7 @@ class Daemon:
         try:
             r = reminders.status(cfg.rem_list, cfg.rem_title, d.date, cfg.tz.key)
         except reminders.RemindersError as e:
-            self.log(f"⚠️ 提醒事项读取失败：{e}")
+            self.log(f"WARN reminder read failed: {e}")
             return None
         if r.get("completed") and r.get("completion"):
             return r["completion"].astimezone(cfg.tz)
@@ -180,31 +170,32 @@ class Daemon:
     def run_step(self, i: int, step: Step, now: datetime) -> None:
         d = self.day
         drill = bool(d.drill_scale)
-        prefix = "🎯[演习] " if drill else ""
+        prefix = "🎯[drill] " if drill else ""
         fmt = {"name": self.cfg.tattle_name, "time": d.target,
                "late": f"{self.elapsed_min(now):.0f}"}
         text = step.text.format(**fmt) if step.text else ""
         if step.action == "notify":
             self.notify(prefix + text)
         elif step.action == "tattle":
+            # In a drill the tattle goes to yourself instead of your friends.
             targets = [self.cfg.self_number] if drill else step.to
             for to in targets:
                 try:
-                    imsg.send(("📣[演习，本应发给朋友] " if drill else "") + text, to)
+                    imsg.send(("📣[drill, would go to a friend] " if drill else "") + text, to)
                 except RuntimeError as e:
-                    self.log(f"⚠️ 告状发送失败 {to}: {e}")
+                    self.log(f"WARN tattle send failed {to}: {e}")
             if not drill:
-                self.notify(f"📣 已告状：发给 {len(step.to)} 人。")
+                self.notify(f"📣 Tattled: sent to {len(step.to)} contact(s).")
         elif step.action == "shell" and step.cmd:
             if drill:
-                self.log(f"🎯[演习] 跳过 shell: {step.cmd}")
+                self.log(f"[drill] skipping shell: {step.cmd}")
             else:
                 subprocess.Popen(shlex.split(step.cmd), cwd=STATE_DIR.parent)
         d.fired.append(i)
         d.save()
         journal.event("escalate", now, step=i, action=step.action, after_min=step.after_min,
                       drill=drill)
-        self.log(f"↑ 升级第 {i} 步：{step.action}（{step.after_min} 分钟）")
+        self.log(f"Escalation step {i}: {step.action} ({step.after_min} min)")
 
     def finish(self, now: datetime, via: str, at: datetime | None = None) -> None:
         d = self.day
@@ -215,9 +206,9 @@ class Daemon:
         d.save()
         journal.event("checkin", now, via=via, late_min=round(late, 1), target=d.target,
                       drill=bool(d.drill_scale))
-        self.log(f"✅ 打卡成功（{via}，{at:%H:%M}，晚 {late:.0f} 分钟）")
-        self.notify(f"✅ 打卡成功 {at:%H:%M}（{via}），比目标 {d.target} 晚 {late:.0f} 分钟。"
-                    + ("（演习）" if d.drill_scale else ""))
+        self.log(f"Checked in via {via} at {at:%H:%M}, {late:.0f} min late")
+        self.notify(f"✅ Checked in at {at:%H:%M} via {via}, {late:.0f} min after {d.target}."
+                    + (" (drill)" if d.drill_scale else ""))
 
     def miss(self, now: datetime) -> None:
         d = self.day
@@ -225,10 +216,9 @@ class Daemon:
         d.wake_phase = "missed"
         d.save()
         journal.event("missed", now, target=d.target, drill=bool(d.drill_scale))
-        self.log("❌ 超时未打卡，记 missed")
-        self.notify(f"❌ 今天 {d.target} 的打卡超时未完成，已记 missed。")
+        self.log("Hard timeout reached, recorded as missed")
+        self.notify(f"❌ No check-in for the {d.target} wake-up; recorded as missed.")
 
-    # ── 主循环 ────────────────────────────────────────────────────────
     def tick(self) -> None:
         now = self.now()
         today = now.strftime("%Y-%m-%d")
@@ -239,7 +229,6 @@ class Daemon:
             self.day.save()
         d, cfg = self.day, self.cfg
 
-        # 演习触发
         if DRILL_FILE.exists():
             try:
                 scale = float(DRILL_FILE.read_text().strip() or "1")
@@ -249,47 +238,45 @@ class Daemon:
             if d.wake_phase != "active":
                 self.start_wake(now, drill_scale=scale)
 
-        # 睡前提醒
         if cfg.bed_enabled and not d.bed_reminded and (now.hour, now.minute) >= cfg.bed_time:
             d.bed_reminded = True
             d.save()
-            self.notify(f"🌙 {'%02d:%02d' % cfg.bed_time} 了，该上床了。躺下回「睡」记一笔。")
-            self.log("🌙 已发睡前提醒")
+            self.notify(f"🌙 It is {'%02d:%02d' % cfg.bed_time}, time for bed. Reply with a bedtime keyword to log it.")
+            self.log("Bedtime reminder sent")
 
         msgs = self.incoming()
 
-        # 上床打卡（任何时候都认）
         if cfg.bed_keywords and any(self.matches(m, cfg.bed_keywords) for m in msgs):
             d.bed_checkin = now.strftime("%H:%M")
             d.save()
             journal.event("bed_checkin", now)
-            self.notify(f"🌙 记下了：{now:%H:%M} 上床。")
-            self.log("🌙 上床打卡")
+            self.notify(f"🌙 Logged: in bed at {now:%H:%M}.")
+            self.log("Bedtime check-in")
 
-        # 起床
         self.ensure_reminder(now)
         if d.wake_phase == "idle":
             if self.wake_due(now):
                 self.start_wake(now)
             elif self.wake_passed(now):
-                d.wake_phase = "skipped"          # 窗口已过（守护进程启动太晚）
+                # The daemon started after the window closed; do not ring today.
+                d.wake_phase = "skipped"
                 d.save()
-                self.log("⏭ 今天的起床窗口已过，跳过")
+                self.log("Wake window already passed today, skipping")
         if d.wake_phase == "active":
             if cfg.alarm_enabled and not self.alarm.ringing:
-                self.alarm.start()                       # 进程重启后恢复响铃
+                self.alarm.start()
             started = datetime.fromisoformat(d.wake_started)
             local_ok = CHECKIN_FILE.exists() and \
                 datetime.fromtimestamp(CHECKIN_FILE.stat().st_mtime, cfg.tz) >= started
             if local_ok:
                 CHECKIN_FILE.unlink()
-                self.finish(now, "本机")
+                self.finish(now, "local")
                 return
             if any(self.matches(m, cfg.wake_keywords) for m in msgs):
                 self.finish(now, "iMessage")
                 return
             if (done_at := self.reminder_completion()) and done_at >= started - timedelta(minutes=30):
-                self.finish(now, "提醒事项", at=done_at)
+                self.finish(now, "reminder", at=done_at)
                 return
             el = self.elapsed_min(now)
             scale = d.drill_scale or 1.0
@@ -300,14 +287,14 @@ class Daemon:
                 self.miss(now)
 
     def run(self) -> None:
-        self.log(f"▶️ MorningWaker 启动。起床 {'%02d:%02d' % self.cfg.wake_time}，"
-                 f"时区 {self.cfg.tz.key}，从 rowid={self.last_rowid} 之后监听。")
+        self.log(f"MorningWaker started: wake {'%02d:%02d' % self.cfg.wake_time} "
+                 f"{self.cfg.tz.key}, listening after rowid={self.last_rowid}")
         try:
             while True:
                 try:
                     self.tick()
-                except Exception as e:                   # noqa: BLE001  不让一次异常杀掉守护进程
-                    self.log(f"💥 tick 异常：{e!r}")
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"ERROR tick failed: {e!r}")
                 time.sleep(POLL_SEC)
         finally:
             self.alarm.stop()

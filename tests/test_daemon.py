@@ -1,6 +1,4 @@
-"""状态机单元测试：假时钟、假 iMessage、假提醒事项、假闹铃。不碰真实系统。
-    python3 -m unittest discover -s tests -v
-"""
+"""State-machine unit tests with a fake clock, fake iMessage, fake Reminders, and fake alarm."""
 from __future__ import annotations
 
 import os
@@ -16,12 +14,12 @@ TMP = Path(tempfile.mkdtemp())
 os.environ["MORNINGWAKER_CONFIG"] = str(TMP / "cfg.toml")
 (TMP / "cfg.toml").write_text('''
 [general]
-timezone = "Asia/Singapore"
+timezone = "UTC"
 [imessage]
-self = "+6511111111"
+self = "+15550001111"
 [wake]
 time = "09:00"
-keywords = ["起", "up"]
+keywords = ["up", "awake"]
 hard_timeout_min = 60
 [reminders]
 enabled = true
@@ -37,7 +35,7 @@ text = "wake"
 [[escalation]]
 after_min = 15
 action = "tattle"
-to = ["+6522222222"]
+to = ["+15550002222"]
 text = "{name} late {late}"
 [tattle]
 name = "N"
@@ -51,7 +49,8 @@ import morningwaker.daemon as D  # noqa: E402
 D.STATE_DIR = C.STATE_DIR
 D.DAY_FILE = C.STATE_DIR / "day.json"; D.CHECKIN_FILE = C.STATE_DIR / "checkin"; D.DRILL_FILE = C.STATE_DIR / "drill"
 
-TZ = ZoneInfo("Asia/Singapore")
+TZ = ZoneInfo("UTC")
+FRIEND = "+15550002222"
 
 
 class FakeAlarm:
@@ -66,7 +65,7 @@ class Harness:
         self.sent: list[tuple[str, str]] = []
         self.inbox: list[tuple[int, str]] = []
         self.rowid = 100
-        self.rem: dict[str, dict] = {}          # date -> status
+        self.rem: dict[str, dict] = {}
         self.created: list[str] = []
         self.patches = [
             mock.patch.object(D.imsg, "send", lambda body, to: self.sent.append((to, body)) or "v1"),
@@ -106,54 +105,55 @@ class Harness:
 
 
 class DaemonTests(unittest.TestCase):
-    def setUp(self): self.h = Harness(datetime(2026, 9, 14, 7, 0, tzinfo=TZ))   # 周一 07:00
+    # Every test starts on Monday 2026-09-14 at 07:00.
+    def setUp(self): self.h = Harness(datetime(2026, 9, 14, 7, 0, tzinfo=TZ))
     def tearDown(self): self.h.close()
 
     def test_creates_todays_reminder_one_hour_ahead(self):
         h = self.h
         h.tick(); self.assertEqual(h.created, [])
         h.tick(60); self.assertEqual(h.created, ["2026-09-14"])
-        h.tick(1); self.assertEqual(h.created, ["2026-09-14"])          # 幂等
+        h.tick(1); self.assertEqual(h.created, ["2026-09-14"])
 
     def test_wake_starts_at_target_and_first_step_fires(self):
         h = self.h
         h.tick(119); self.assertEqual(h.phase, "idle")
-        h.tick(1)                                                        # 09:00
+        h.tick(1)
         self.assertEqual(h.phase, "active"); self.assertTrue(h.d.alarm.ringing)
         self.assertEqual([b for _, b in h.sent], ["wake"])
 
     def test_phone_reply_checks_in_and_stops_alarm(self):
         h = self.h
-        h.tick(120); h.phone("起！"); h.tick(3)
+        h.tick(120); h.phone("Up!"); h.tick(3)
         self.assertEqual(h.phase, "done"); self.assertFalse(h.d.alarm.ringing)
-        self.assertIn("✅", h.sent[-1][1]); self.assertIn("晚 3 分钟", h.sent[-1][1])
+        self.assertIn("✅", h.sent[-1][1]); self.assertIn("3 min after", h.sent[-1][1])
 
     def test_reminder_completion_checks_in_with_its_own_time(self):
         h = self.h
         h.tick(120)
         h.rem["2026-09-14"] = {"exists": True, "completed": True,
                                "completion": datetime(2026, 9, 14, 9, 7, tzinfo=TZ)}
-        h.tick(10)                                                       # 09:10 才读到
+        h.tick(10)
         self.assertEqual(h.phase, "done"); self.assertIn("09:07", h.sent[-1][1])
-        self.assertIn("提醒事项", h.sent[-1][1])
+        self.assertIn("via reminder", h.sent[-1][1])
 
     def test_own_messages_do_not_self_trigger(self):
         h = self.h
-        h.tick(120); h.phone("⏰ 起床打卡！回复「起」结束闹铃。"); h.phone("起床打卡"); h.tick(1)
+        h.tick(120); h.phone("⏰ Wake-up check-in! Reply up."); h.phone("wake up now"); h.tick(1)
         self.assertEqual(h.phase, "active")
 
     def test_tattle_fires_at_15_and_goes_to_friend(self):
         h = self.h
-        h.tick(120); h.tick(14); self.assertNotIn("+6522222222", [t for t, _ in h.sent])
+        h.tick(120); h.tick(14); self.assertNotIn(FRIEND, [t for t, _ in h.sent])
         h.tick(1)
-        friend = [b for t, b in h.sent if t == "+6522222222"]
+        friend = [b for t, b in h.sent if t == FRIEND]
         self.assertEqual(friend, ["N late 15"])
 
     def test_missed_after_hard_timeout_then_next_day_reminder(self):
         h = self.h
         h.tick(120); h.tick(60)
         self.assertEqual(h.phase, "missed"); self.assertFalse(h.d.alarm.ringing)
-        self.assertIn("2026-09-15", h.created)                           # 明天那条已建
+        self.assertIn("2026-09-15", h.created)
 
     def test_late_start_skips_today(self):
         h = self.h
@@ -164,7 +164,7 @@ class DaemonTests(unittest.TestCase):
     def test_restart_mid_session_resumes_ringing(self):
         h = self.h
         h.tick(120); h.tick(2)
-        d2 = D.Daemon(C.load(), now_fn=lambda: h.now)                    # 模拟重启
+        d2 = D.Daemon(C.load(), now_fn=lambda: h.now)
         self.assertEqual(d2.day.wake_phase, "active"); self.assertEqual(d2.day.fired, [0])
         d2.tick(); self.assertTrue(d2.alarm.ringing)
 

@@ -1,9 +1,4 @@
-"""本地仪表盘：stdlib HTTP 服务，静态页 + 两个只读 JSON 接口。
-
-  GET /              web/index.html
-  GET /api/days      journal 按日聚合（演习不计）
-  GET /api/status    今天的进度 + 配置摘要
-"""
+"""Local dashboard: stdlib HTTP server serving web/index.html plus two read-only JSON endpoints."""
 from __future__ import annotations
 
 import json
@@ -21,7 +16,7 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB_DIR), **kw)
 
-    def log_message(self, *a):                      # 安静
+    def log_message(self, *a):
         pass
 
     def end_headers(self):
@@ -61,7 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def serve(port: int = 5180) -> None:
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"MorningWaker 仪表盘：http://127.0.0.1:{port}  （Ctrl+C 停止）")
+    print(f"MorningWaker dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -1,12 +1,4 @@
-"""iMessage 收发（macOS Messages.app + 只读 chat.db）。
-
-发送：AppleScript，正文走 osascript 的 argv（UTF-8 干净，中文/emoji 不乱码，
-      也不用管引号转义）。三个变体按可靠性降级。
-接收：只读打开 ~/Library/Messages/chat.db，按 rowid 单调递增取新消息。
-      「自发自收」通道里自己发的消息也会落库，方向靠内容判断，不靠 is_from_me。
-
-需要的系统权限：自动化(终端→Messages)、完全磁盘访问(读 chat.db)。
-"""
+"""iMessage send (AppleScript via Messages.app) and receive (read-only chat.db polling)."""
 from __future__ import annotations
 
 import os
@@ -16,6 +8,7 @@ import tempfile
 
 CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
 
+# Three send variants, tried in order; the body is passed as an argv item to keep UTF-8 intact.
 _SCRIPTS = [
     '''on run argv
 	set msg to item 1 of argv
@@ -41,7 +34,7 @@ end run''',
 
 
 def send(body: str, to: str) -> str:
-    """发一条 iMessage。成功返回用的变体名；三个都失败抛 RuntimeError。"""
+    """Send one iMessage; return the variant that worked or raise RuntimeError."""
     errors = []
     for i, tmpl in enumerate(_SCRIPTS):
         fd, path = tempfile.mkstemp(suffix=".applescript")
@@ -55,7 +48,7 @@ def send(body: str, to: str) -> str:
             errors.append(f"v{i + 1}: {p.stderr.strip()[:200]}")
         finally:
             os.unlink(path)
-    raise RuntimeError("iMessage 发送失败：" + " | ".join(errors))
+    raise RuntimeError("iMessage send failed: " + " | ".join(errors))
 
 
 def max_rowid() -> int:
@@ -67,7 +60,7 @@ def max_rowid() -> int:
 
 
 def fetch_since(rowid: int, limit: int = 100) -> list[tuple[int, str]]:
-    """返回 (rowid, text)，rowid > 给定值、有正文的消息，升序。"""
+    """Return (rowid, text) for messages with rowid greater than the given one, ascending."""
     con = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
     con.execute("PRAGMA busy_timeout=3000")
     try:

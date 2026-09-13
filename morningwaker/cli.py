@@ -1,4 +1,4 @@
-"""morningwaker 命令行：on / off / status / checkin / drill / test-msg / log / stats / run"""
+"""Command-line entry point for morningwaker."""
 from __future__ import annotations
 
 import getpass
@@ -19,21 +19,20 @@ LABEL = f"com.{getpass.getuser()}.morningwaker"
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 PY = sys.executable
 
-USAGE = """用法: morningwaker <命令>
-  on          后台启动守护进程（从当前终端 fork，继承终端的磁盘访问/自动化权限）
-  on --launchd 改用 launchd 常驻（开机自启）。需要先给 Python 本体授「完全磁盘访问」
-  off         停止（两种方式都停）
-  status      守护进程状态 + 今天的进度
-  checkin     本机打卡（等价于手机回「起」）
-  drill [倍率] 立刻演习一遍完整流程；倍率把升级分钟数缩放，默认 0.1（15 分钟→90 秒）。
-              演习里「告状」只发给你自己，不发朋友。
-  test-msg    给自己发一条测试 iMessage，验证通道
-  probe [日期] 探针：那天有没有打卡？只读、不发消息，stdout 只打印 1（有）或 0（无），默认今天
-  doctor      体检：配置、iMessage 数据库、提醒事项权限、定时唤醒、防睡眠、守护进程
-  log         跟踪守护进程日志
-  stats [天]  最近 N 天打卡表（默认 14）
-  dash [端口] 打开本地仪表盘（日历 + 统计 + 每日时间线），默认 5180
-  run         前台跑守护进程（调试用）"""
+USAGE = """usage: morningwaker <command>
+  on            start the daemon in the background (forked from this terminal, inherits its permissions)
+  on --launchd  run under launchd instead (starts at login; Python itself needs Full Disk Access)
+  off           stop the daemon (either mode)
+  status        daemon state and today's progress
+  checkin       check in from this Mac
+  drill [scale] run the whole escalation now; scale shrinks the minutes (default 0.1); tattles go to you
+  test-msg      send yourself a test iMessage
+  probe [date]  read-only: was there a check-in that day? prints 1 or 0 (default today)
+  doctor        check config, chat.db access, Reminders list, scheduled wake, sleep assertions, daemon
+  log           follow the daemon log
+  stats [days]  check-in table for the last N days (default 14)
+  dash [port]   open the local dashboard (default 5180)
+  run           run the daemon in the foreground"""
 
 
 def _plist() -> str:
@@ -57,12 +56,13 @@ def _pid() -> int | None:
 
 
 def cmd_on(launchd: bool = False) -> int:
-    load()                                             # 先校验配置，占位值直接拒
+    # Validate the config first so placeholder values are rejected before anything starts.
+    load()
     journal.LOG_DIR.mkdir(exist_ok=True)
     STATE_DIR.mkdir(exist_ok=True)
     if not launchd:
         if pid := _pid():
-            print(f"✅ 已经在跑了（pid {pid}）")
+            print(f"Already running (pid {pid})")
             return 0
         env = {**os.environ, "PYTHONPATH": str(ROOT), "MORNINGWAKER_DAEMON": "1"}
         with open(journal.DAEMON_LOG, "a") as out:
@@ -72,16 +72,16 @@ def cmd_on(launchd: bool = False) -> int:
         PIDFILE.write_text(str(p.pid))
         time.sleep(2)
         if _pid():
-            print(f"✅ MorningWaker 已启动（pid {p.pid}）\n   日志：morningwaker log ／ 状态：morningwaker status")
+            print(f"MorningWaker started (pid {p.pid}). Logs: morningwaker log / status: morningwaker status")
             return 0
-        print("❌ 启动失败，看 morningwaker log", file=sys.stderr)
+        print("Failed to start; see morningwaker log", file=sys.stderr)
         return 1
     if _loaded():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
     PLIST.write_text(_plist())
     subprocess.run(["launchctl", "load", str(PLIST)], check=True)
     time.sleep(1.5)
-    print(f"✅ MorningWaker 已启动（launchd {LABEL}）\n   日志：morningwaker log ／ 状态：morningwaker status")
+    print(f"MorningWaker started under launchd ({LABEL}). Logs: morningwaker log / status: morningwaker status")
     return 0
 
 
@@ -93,7 +93,7 @@ def cmd_off() -> int:
     if PLIST.exists():
         subprocess.run(["launchctl", "unload", str(PLIST)], capture_output=True)
         PLIST.unlink()
-    print("🛑 MorningWaker 已停止并卸载")
+    print("MorningWaker stopped")
     return 0
 
 
@@ -101,46 +101,46 @@ def cmd_status() -> int:
     cfg = load()
     now = datetime.now(cfg.tz)
     if pid := _pid():
-        print(f"守护进程：✅ 运行中（pid {pid}）")
+        print(f"daemon: running (pid {pid})")
     elif _loaded():
-        print(f"守护进程：✅ launchd 托管（{LABEL}）")
+        print(f"daemon: running under launchd ({LABEL})")
     else:
-        print("守护进程：🛑 未运行")
-    print(f"配置：{CONFIG_PATH}")
-    print(f"起床 {'%02d:%02d' % cfg.wake_time}  睡前提醒 "
-          f"{'%02d:%02d' % cfg.bed_time if cfg.bed_enabled else '关'}  时区 {cfg.tz.key}"
-          f"  现在 {now:%Y-%m-%d %H:%M}")
-    print("升级阶梯：" + "  ".join(f"{s.after_min:g}m→{s.action}" for s in cfg.steps))
+        print("daemon: not running")
+    print(f"config: {CONFIG_PATH}")
+    print(f"wake {'%02d:%02d' % cfg.wake_time}  bedtime "
+          f"{'%02d:%02d' % cfg.bed_time if cfg.bed_enabled else 'off'}  tz {cfg.tz.key}"
+          f"  now {now:%Y-%m-%d %H:%M}")
+    print("escalation: " + "  ".join(f"{s.after_min:g}m->{s.action}" for s in cfg.steps))
     if DAY_FILE.exists():
         import json
         d = json.loads(DAY_FILE.read_text())
-        print(f"今天({d.get('date')})：起床 {d.get('wake_phase')}"
-              f"  已升级 {d.get('fired')}  上床 {d.get('bed_checkin') or '-'}")
+        print(f"today ({d.get('date')}): wake {d.get('wake_phase')}"
+              f"  fired {d.get('fired')}  bed {d.get('bed_checkin') or '-'}")
     return 0
 
 
 def cmd_checkin() -> int:
     STATE_DIR.mkdir(exist_ok=True)
     CHECKIN_FILE.touch()
-    print("✅ 已本机打卡（守护进程 10 秒内确认并停铃）")
+    print("Checked in locally; the daemon confirms within 10 s and stops the alarm")
     return 0
 
 
 def cmd_drill(scale: str = "0.1") -> int:
     if not (_pid() or _loaded()):
-        print("守护进程没在跑，先 morningwaker on", file=sys.stderr)
+        print("Daemon is not running; run morningwaker on first", file=sys.stderr)
         return 1
     STATE_DIR.mkdir(exist_ok=True)
     DRILL_FILE.write_text(scale)
-    print(f"🎯 演习已触发（倍率 {scale}）。手机会收到消息，Mac 会响铃；回「起」或 morningwaker checkin 结束。")
+    print(f"Drill triggered (scale {scale}). Reply with a keyword or run morningwaker checkin to end it.")
     return 0
 
 
 def cmd_test_msg() -> int:
     from . import imsg
     cfg = load()
-    v = imsg.send(f"🎯 MorningWaker 通道测试 {datetime.now(cfg.tz):%H:%M}", cfg.self_number)
-    print(f"✅ 已发（变体 {v}），看手机有没有横幅。")
+    v = imsg.send(f"🎯 MorningWaker channel test {datetime.now(cfg.tz):%H:%M}", cfg.self_number)
+    print(f"Sent (variant {v}); check your phone for the banner.")
     return 0
 
 
@@ -151,37 +151,37 @@ def cmd_doctor() -> int:
     def row(ok: bool, name: str, detail: str = "") -> None:
         nonlocal ok_all
         ok_all &= ok
-        print(f"  {'✅' if ok else '❌'} {name}" + (f"  —  {detail}" if detail else ""))
+        print(f"  [{'ok' if ok else 'FAIL'}] {name}" + (f": {detail}" if detail else ""))
 
-    print("MorningWaker 体检")
+    print("MorningWaker doctor")
     try:
         cfg = load()
-        row(True, "配置", f"{CONFIG_PATH.name}，起床 {'%02d:%02d' % cfg.wake_time} {cfg.tz.key}")
+        row(True, "config", f"{CONFIG_PATH.name}, wake {'%02d:%02d' % cfg.wake_time} {cfg.tz.key}")
     except SystemExit as e:
-        row(False, "配置", str(e))
+        row(False, "config", str(e))
         return 1
     try:
-        row(True, "iMessage 数据库可读", f"chat.db 最新 rowid {imsg.max_rowid()}")
-    except Exception as e:                                   # noqa: BLE001
-        row(False, "iMessage 数据库可读", f"{e}（给终端授「完全磁盘访问」）")
+        row(True, "chat.db readable", f"latest rowid {imsg.max_rowid()}")
+    except Exception as e:  # noqa: BLE001
+        row(False, "chat.db readable", f"{e} (grant Full Disk Access to your terminal)")
     if cfg.rem_enabled:
         try:
             ls = reminders.lists()
-            row(cfg.rem_list in ls, "提醒事项列表", f"「{cfg.rem_list}」" +
-                ("存在" if cfg.rem_list in ls else f"不存在，现有：{ls}"))
-        except Exception as e:                               # noqa: BLE001
-            row(False, "提醒事项权限", str(e))
+            row(cfg.rem_list in ls, "Reminders list", f"'{cfg.rem_list}' " +
+                ("exists" if cfg.rem_list in ls else f"not found; available: {ls}"))
+        except Exception as e:  # noqa: BLE001
+            row(False, "Reminders access", str(e))
     sched = subprocess.run(["pmset", "-g", "sched"], capture_output=True, text=True).stdout
-    row("wakepoweron" in sched or "wake at" in sched, "定时唤醒（pmset）",
-        next((l.strip() for l in sched.splitlines() if "wake" in l), "没有排程；合盖/睡眠时不会醒"))
+    row("wakepoweron" in sched or "wake at" in sched, "scheduled wake (pmset)",
+        next((l.strip() for l in sched.splitlines() if "wake" in l), "none; the Mac will not wake from sleep"))
     asr = subprocess.run(["pmset", "-g", "assertions"], capture_output=True, text=True).stdout
-    row("PreventSystemSleep" in asr or "PreventUserIdleSystemSleep" in asr, "防睡眠断言",
-        "有进程持有" if "Prevent" in asr else "没有（caffeinate -ism 或 nosleep on）")
-    row(bool(_pid() or _loaded()), "守护进程", f"pid {_pid()}" if _pid() else "未运行")
+    row("PreventSystemSleep" in asr or "PreventUserIdleSystemSleep" in asr, "sleep prevention",
+        "held by a process" if "Prevent" in asr else "none (use caffeinate -ism or pmset repeat)")
+    row(bool(_pid() or _loaded()), "daemon", f"pid {_pid()}" if _pid() else "not running")
     tattle = [s for s in cfg.steps if s.action == "tattle"]
-    row(all(s.to for s in tattle), "告状收件人",
-        "已填" if all(s.to for s in tattle) else "tattle.to 为空，告状那步不会发给任何人")
-    print("  结论：" + ("全部就绪" if ok_all else "有项目未就绪，见 ❌"))
+    row(all(s.to for s in tattle), "tattle recipients",
+        "set" if all(s.to for s in tattle) else "tattle.to is empty; that step sends to nobody")
+    print("  result: " + ("all good" if ok_all else "some checks failed"))
     return 0 if ok_all else 1
 
 

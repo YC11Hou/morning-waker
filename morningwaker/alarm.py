@@ -1,4 +1,4 @@
-"""Mac 本机响铃：afplay 循环播放，直到 stop()。响铃前拉音量、停铃后还原。"""
+"""Local Mac alarm: loop afplay until stop(); raises volume while ringing and restores it after."""
 from __future__ import annotations
 
 import subprocess
@@ -20,7 +20,7 @@ def _set_volume(v: int) -> None:
 
 
 def wake_screen(seconds: int = 30) -> None:
-    """caffeinate -u = 模拟一次用户活动，屏幕点亮但停在锁屏，不绕过密码。"""
+    """Simulate user activity so the screen lights up; stays on the lock screen."""
     subprocess.Popen(["caffeinate", "-u", "-t", str(seconds)],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

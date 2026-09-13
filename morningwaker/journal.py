@@ -1,4 +1,4 @@
-"""打卡日志：logs/journal.jsonl，一行一个事件。个人数据，已 .gitignore。"""
+"""Event journal (logs/journal.jsonl, one event per line) and daemon log; both are gitignored."""
 from __future__ import annotations
 
 import json
@@ -24,7 +24,8 @@ def log(msg: str, now: datetime) -> None:
     LOG_DIR.mkdir(exist_ok=True)
     line = f"{now:%Y-%m-%d %H:%M:%S} {msg}"
     print(line, flush=True)
-    if os.environ.get("MORNINGWAKER_DAEMON") == "1":   # launchd 已把 stdout 接到同一个文件
+    # Under launchd stdout already goes to the log file, so skip the second write.
+    if os.environ.get("MORNINGWAKER_DAEMON") == "1":
         return
     with open(DAEMON_LOG, "a", encoding="utf-8") as f:
         f.write(line + "\n")
@@ -45,7 +46,7 @@ def read_all() -> list[dict]:
 
 
 def days(include_drills: bool = False) -> dict[str, dict]:
-    """按日期聚合：{date: {target, checkin, late, via, missed, tattled, steps, events[]}}。"""
+    """Aggregate events per date: {date: {target, checkin, late, via, missed, tattled, steps, events}}."""
     out: dict[str, dict] = {}
     for r in read_all():
         if r.get("drill") and not include_drills:
@@ -69,12 +70,12 @@ def days(include_drills: bool = False) -> dict[str, dict]:
 
 
 def stats(days: int = 14) -> str:
-    """最近 N 天一张表：目标 / 打卡 / 迟到分钟 / 告状 / 上床时间。"""
+    """Text table for the last N days: target / check-in / late / tattled / bedtime."""
     recs = read_all()
     by_date: dict[str, dict] = {}
     for r in recs:
         if r.get("drill"):
-            continue                                   # 演习不进统计
+            continue
         d = by_date.setdefault(r["date"], {})
         k = r["kind"]
         if k == "wake_start":
@@ -90,13 +91,13 @@ def stats(days: int = 14) -> str:
         elif k == "bed_checkin":
             d["bed"] = r["ts"][11:16]
     if not by_date:
-        return "还没有记录。"
+        return "No records yet."
     dates = sorted(by_date)[-days:]
-    lines = [f"{'日期':<12}{'目标':<7}{'打卡':<8}{'迟到':<7}{'告状':<5}{'上床'}"]
+    lines = [f"{'date':<12}{'target':<8}{'checkin':<9}{'late':<7}{'tattled':<9}{'bed'}"]
     for dt in dates:
         d = by_date[dt]
         late = d.get("late")
         late_s = "" if late is None else f"+{late:.0f}m"
-        lines.append(f"{dt:<12}{d.get('target',''):<7}{d.get('checkin',''):<8}"
-                     f"{late_s:<7}{'是' if d.get('tattled') else '':<5}{d.get('bed','')}")
+        lines.append(f"{dt:<12}{d.get('target',''):<8}{d.get('checkin',''):<9}"
+                     f"{late_s:<7}{'yes' if d.get('tattled') else '':<9}{d.get('bed','')}")
     return "\n".join(lines)

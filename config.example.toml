@@ -1,65 +1,57 @@
-# MorningWaker 配置样例。复制成 config.local.toml 再填（config.local.toml 已 .gitignore）。
-#   cp config.example.toml config.local.toml
-# 所有时间都按 [general].timezone 解释，和这台 Mac 的系统时区无关。
+# Copy to config.local.toml (gitignored) and fill in your values. All times use [general].timezone.
 
 [general]
-timezone = "Asia/Singapore"
+timezone = "UTC"
 
 [imessage]
-# 你自己的手机号（= 这台 Mac 登录的 Apple ID 的 iMessage 号码）。
-# 通道是「自发自收」：Mac 给这个号码发 iMessage，你的 iPhone 会收到横幅。
-self = "+6500000000"
+# Your own phone number in E.164 form; must be the iMessage number of the Apple ID signed in on this Mac.
+self = "+10000000000"
 
 [wake]
-time = "09:00"                       # 起床打卡时刻（HH:MM）
-weekdays = [1, 2, 3, 4, 5, 6, 7]     # 1=周一 … 7=周日
-keywords = ["起", "起了", "up", "打卡"]   # 手机回这些词之一 = 打卡成功
-hard_timeout_min = 60                # 超过这么久还没打卡：记 missed，停闹铃
+time = "09:00"
+weekdays = [1, 2, 3, 4, 5, 6, 7]
+keywords = ["up", "awake", "checkin"]
+hard_timeout_min = 60
 
 [bedtime]
 enabled = true
-remind_at = "23:30"                  # 理想入睡时刻，到点推一条「该睡了」
-keywords = ["睡", "晚安", "sleep"]      # 回这些词 = 记录实际上床时间（可选）
+remind_at = "23:30"
+keywords = ["bed", "sleep", "goodnight"]
 
 [reminders]
-# 主打卡口：每天起床前 create_ahead_min 分钟，在 macOS 提醒事项的 list 里新建一条 title，
-# 到点 iPhone 本地响提醒（不依赖 Mac）。你在手机上勾掉它 = 打卡，勾的时刻就是打卡时间。
-# MorningWaker 只新建、只读，永远不替你勾。
+# A reminder is created in this existing list ahead of wake time; completing it on your phone is the check-in.
 enabled = true
-list = "重要事项"
-title = "☀️ 起床打卡"
+list = "Reminders"
+title = "☀️ Wake-up check-in"
 create_ahead_min = 60
 
 [alarm]
-enabled = true                       # Mac 本机循环响铃，直到打卡
+enabled = true
 sound = "/System/Library/Sounds/Sosumi.aiff"
-volume = 80                          # 响铃期间把输出音量拉到这个值，打卡后还原
-interval_sec = 2                     # 两次响铃间隔
+volume = 80
+interval_sec = 2
 
-# 升级阶梯：从起床时刻起算，第 after_min 分钟还没打卡就执行该步。
-# action = "notify"  → 给自己手机推 text
-# action = "tattle"  → 给 to 里的每个号码发 text（告状），并给自己发一份抄送
-# action = "shell"   → 跑 cmd（任何你想到的更狠的招）
+# Steps run after_min minutes past wake time without a check-in: notify = message you, tattle = message `to`, shell = run cmd.
 [[escalation]]
 after_min = 0
 action = "notify"
-text = "⏰ 起床打卡！回复「起」结束闹铃。"
+text = "⏰ Wake-up check-in! Reply with a keyword to stop the alarm."
 
 [[escalation]]
 after_min = 5
 action = "notify"
-text = "⏰ 5 分钟了还没打卡。再 10 分钟就告状。"
+text = "⏰ 5 minutes and no check-in. Tattling in 10."
 
 [[escalation]]
 after_min = 10
 action = "notify"
-text = "⏰ 10 分钟。最后 5 分钟。"
+text = "⏰ 10 minutes. Last 5."
 
 [[escalation]]
 after_min = 15
 action = "tattle"
-to = ["+6500000001"]                 # 朋友的号码，可多个
-text = "（自动消息）我是 {name} 的起床打卡机器人。今天 {time} 的闹钟他 15 分钟了还没打卡，可能还在睡。麻烦戳他一下。"
+to = ["+10000000001"]
+text = "(automated) This is {name}'s wake-up bot. The {time} alarm has gone unanswered for 15 minutes. Please give them a nudge."
 
 [tattle]
-name = "我"                          # 上面 {name} 的值
+name = "me"

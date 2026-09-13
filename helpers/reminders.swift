@@ -1,8 +1,4 @@
-// MorningWaker 的 EventKit 帮手（编译成 build/reminders）。只做三件事：
-//   ensure <list> <title> <yyyy-mm-dd> <HH:MM> <tz> [notes]   当天没有同名提醒就新建；输出 JSON {id}
-//   status <list> <title> <yyyy-mm-dd> <tz>                    输出 JSON {exists, completed, completion}
-//   lists                                                      输出所有提醒列表名
-// 权限边界：只新增、只读。绝不标记完成、绝不删除（那是用户本人的动作）。
+// EventKit helper for MorningWaker: ensure / status / lists. Creates and reads only; never completes or deletes.
 import EventKit
 import Foundation
 
@@ -43,7 +39,7 @@ func dayRange(tzId: String) -> (Date, Date) {
     return (start, start.addingTimeInterval(86400))
 }
 
-// 找到该日期、该标题的提醒（含已完成）
+// Find the reminder with this title due on that day, completed or not.
 func find(tzId: String) -> EKReminder? {
     let (start, end) = dayRange(tzId: tzId)
     let s2 = DispatchSemaphore(value: 0); var found: EKReminder?

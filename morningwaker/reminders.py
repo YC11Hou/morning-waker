@@ -1,8 +1,4 @@
-"""提醒事项通道（macOS Reminders / EventKit，经 build/reminders 二进制）。
-
-主打卡口：每天在指定列表里新建一条「起床打卡」，用户在 iPhone 上勾掉，
-completionDate 就是打卡时间。守护进程只新建、只读；**永远不标记完成、不删除**。
-"""
+"""Reminders channel via the EventKit helper binary; creates and reads only, never completes or deletes."""
 from __future__ import annotations
 
 import json
@@ -26,7 +22,7 @@ def ensure_built() -> Path:
         p = subprocess.run(["swiftc", "-O", str(SRC), "-o", str(BIN)],
                            capture_output=True, text=True)
         if p.returncode != 0:
-            raise RemindersError(f"编译 reminders 帮手失败：{p.stderr[-400:]}")
+            raise RemindersError(f"failed to compile reminders helper: {p.stderr[-400:]}")
     return BIN
 
 
@@ -42,12 +38,12 @@ def lists() -> list[str]:
 
 
 def ensure(list_name: str, title: str, date: str, hm: str, tz: str, notes: str = "") -> dict:
-    """当天没有就新建。返回 {id, created}。"""
+    """Create the reminder for that date if missing; return {id, created}."""
     return _run("ensure", list_name, title, date, hm, tz, notes)
 
 
 def status(list_name: str, title: str, date: str, tz: str) -> dict:
-    """返回 {exists, completed, completion(datetime|None), id}。"""
+    """Return {exists, completed, completion (datetime or None), id}."""
     r = _run("status", list_name, title, date, tz)
     if r.get("completion"):
         r["completion"] = datetime.fromisoformat(r["completion"].replace("Z", "+00:00"))

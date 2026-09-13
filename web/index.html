@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MorningWaker 仪表盘</title>
+<title>MorningWaker Dashboard</title>
 <style>
 :root {
   color-scheme: light dark;
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   --bg: #f6f7f9; --bg-panel: #fff; --bg-subtle: #eff1f4; --bg-hover: #eaecef; --border: #e2e5e9;
   --text: #1a1a1a; --text-2: #595959; --text-3: #8c8c8c;
   --accent: #ff8c00; --ontime: #2cbb5d; --late: #e0a800; --verylate: #ff7a1a; --missed: #ef4743;
@@ -69,7 +69,7 @@ th { color: var(--text-3); font-weight: 500; font-size: 12px; }
 <div class="wrap">
   <header>
     <h1>🌅 MorningWaker</h1>
-    <span class="sub" id="sub">加载中…</span>
+    <span class="sub" id="sub">Loading…</span>
   </header>
 
   <div class="tiles" id="tiles"></div>
@@ -81,20 +81,20 @@ th { color: var(--text-3); font-weight: 500; font-size: 12px; }
         <div class="cal-title" id="cal-title"></div>
         <button class="nav" id="next">›</button>
       </div>
-      <div class="weekdays"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div>
+      <div class="weekdays"><div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div></div>
       <div class="cal-grid" id="cal"></div>
       <div class="legend">
-        <span><i style="background:var(--ontime)"></i>准时（≤5 分钟）</span>
-        <span><i style="background:var(--late)"></i>迟到</span>
-        <span><i style="background:var(--verylate)"></i>&gt;15 分钟 / 已告状</span>
-        <span><i style="background:var(--missed)"></i>未打卡</span>
+        <span><i style="background:var(--ontime)"></i>On time (≤5 min)</span>
+        <span><i style="background:var(--late)"></i>Late</span>
+        <span><i style="background:var(--verylate)"></i>&gt;15 min / tattled</span>
+        <span><i style="background:var(--missed)"></i>Missed</span>
       </div>
     </div>
-    <div class="panel detail" id="detail"><div class="empty">点日历上的某一天看当天时间线</div></div>
+    <div class="panel detail" id="detail"><div class="empty">Click a day to see its timeline</div></div>
   </div>
 
   <div class="panel" style="margin-top:16px">
-    <div class="cal-title">最近 14 天</div>
+    <div class="cal-title">Last 14 days</div>
     <table id="recent"></table>
   </div>
 </div>
@@ -102,6 +102,7 @@ th { color: var(--text-3); font-weight: 500; font-size: 12px; }
 <script>
 const $ = s => document.querySelector(s);
 let DAYS = {}, STATUS = {}, month, selected = null;
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function cls(d) {
   if (!d || !d.target) return '';
@@ -111,7 +112,7 @@ function cls(d) {
   if (d.late > 5) return 'late';
   return 'ontime';
 }
-const LABEL = { ontime: '准时', late: '迟到', verylate: '严重迟到', missed: '未打卡' };
+const LABEL = { ontime: 'On time', late: 'Late', verylate: 'Very late', missed: 'Missed' };
 const COLOR = { ontime: 'var(--ontime)', late: 'var(--late)', verylate: 'var(--verylate)', missed: 'var(--missed)' };
 const pad = n => String(n).padStart(2, '0');
 const key = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -128,18 +129,18 @@ function tiles() {
   for (let i = all.length - 1; i >= 0; i--) { const d = all[i][1]; if (d.checkin != null && !d.missed && d.late <= 15) streak++; else break; }
   const tattles = all.filter(([, d]) => d.tattled).length;
   const t = [
-    ['本月打卡率', rate(thisMonth) == null ? '–' : rate(thisMonth), rate(thisMonth) == null ? '' : '%'],
-    ['平均迟到', avg, lates.length ? '分钟' : ''],
-    ['连续 15 分钟内起床', streak, '天'],
-    ['被告状次数', tattles, '次'],
-    ['记录天数', all.length, '天'],
+    ['Check-in rate this month', rate(thisMonth) == null ? '–' : rate(thisMonth), rate(thisMonth) == null ? '' : '%'],
+    ['Average lateness', avg, lates.length ? 'min' : ''],
+    ['Streak within 15 min', streak, 'days'],
+    ['Times tattled', tattles, ''],
+    ['Days recorded', all.length, ''],
   ];
   $('#tiles').innerHTML = t.map(([k, v, u]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div></div>`).join('');
 }
 
 function calendar() {
   const y = month.getFullYear(), m = month.getMonth();
-  $('#cal-title').textContent = `${y} 年 ${m + 1} 月`;
+  $('#cal-title').textContent = `${MONTHS[m]} ${y}`;
   const today = STATUS.now.slice(0, 10);
   const grid = $('#cal'); grid.innerHTML = '';
   for (let i = 0; i < new Date(y, m, 1).getDay(); i++) grid.appendChild(document.createElement('div'));
@@ -159,16 +160,16 @@ function calendar() {
 
 function detail(k) {
   const d = DAYS[k], c = cls(d);
-  const head = `<h3>${k} <span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || '进行中'}</span></h3>`;
+  const head = `<h3>${k} <span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || 'In progress'}</span></h3>`;
   const summary = d.checkin != null
-    ? `<div class="now">目标 ${d.target} · 打卡 ${d.checkin}（${d.via}）· 晚 ${Math.round(d.late)} 分钟 · 升级 ${d.steps} 步${d.tattled ? ' · 已告状' : ''}</div>`
-    : `<div class="now">目标 ${d.target} · ${d.missed ? '超时未打卡' : '未完成'} · 升级 ${d.steps} 步${d.tattled ? ' · 已告状' : ''}</div>`;
-  const KIND = { wake_start: '⏰ 起床流程开始', checkin: '✅ 打卡', missed: '❌ 超时未打卡', escalate: '↑ 升级' };
-  const ACT = { notify: '手机催促', tattle: '📣 告状', shell: '执行命令' };
+    ? `<div class="now">Target ${d.target} · checked in ${d.checkin} (${d.via}) · ${Math.round(d.late)} min late · ${d.steps} escalation step(s)${d.tattled ? ' · tattled' : ''}</div>`
+    : `<div class="now">Target ${d.target} · ${d.missed ? 'missed' : 'not finished'} · ${d.steps} escalation step(s)${d.tattled ? ' · tattled' : ''}</div>`;
+  const KIND = { wake_start: '⏰ Wake session started', checkin: '✅ Check-in', missed: '❌ Missed', escalate: '↑ Escalation' };
+  const ACT = { notify: 'phone nudge', tattle: '📣 tattle', shell: 'shell command' };
   const items = d.events.map(e => {
     let txt = KIND[e.kind] || e.kind;
-    if (e.kind === 'escalate') txt += `：${ACT[e.action] || e.action}（第 ${e.after_min} 分钟）`;
-    if (e.kind === 'checkin') txt += `（${e.via}）`;
+    if (e.kind === 'escalate') txt += `: ${ACT[e.action] || e.action} (minute ${e.after_min})`;
+    if (e.kind === 'checkin') txt += ` (${e.via})`;
     return `<li><span class="t">${e.ts}</span><span>${txt}</span></li>`;
   }).join('');
   $('#detail').innerHTML = head + summary + `<ul class="tl" style="margin-top:12px">${items}</ul>`;
@@ -177,15 +178,15 @@ function detail(k) {
 function recent() {
   const today = STATUS.now.slice(0, 10);
   const rows = Object.entries(DAYS).filter(([k, d]) => d.target && k <= today).sort().slice(-14).reverse();
-  if (!rows.length) { $('#recent').innerHTML = '<tr><td class="empty">还没有记录。明早第一次。</td></tr>'; return; }
-  $('#recent').innerHTML = '<tr><th>日期</th><th>目标</th><th>打卡</th><th>迟到</th><th>方式</th><th>升级</th><th>结果</th></tr>' +
-    rows.map(([k, d]) => { const c = cls(d); return `<tr><td>${k}</td><td>${d.target}</td><td>${d.checkin ?? '–'}</td><td>${d.late != null ? Math.round(d.late) + ' 分钟' : '–'}</td><td>${d.via ?? '–'}</td><td>${d.steps}${d.tattled ? ' 📣' : ''}</td><td><span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || '进行中'}</span></td></tr>`; }).join('');
+  if (!rows.length) { $('#recent').innerHTML = '<tr><td class="empty">No records yet.</td></tr>'; return; }
+  $('#recent').innerHTML = '<tr><th>Date</th><th>Target</th><th>Check-in</th><th>Late</th><th>Via</th><th>Steps</th><th>Result</th></tr>' +
+    rows.map(([k, d]) => { const c = cls(d); return `<tr><td>${k}</td><td>${d.target}</td><td>${d.checkin ?? '–'}</td><td>${d.late != null ? Math.round(d.late) + ' min' : '–'}</td><td>${d.via ?? '–'}</td><td>${d.steps}${d.tattled ? ' 📣' : ''}</td><td><span class="pill" style="background:${COLOR[c] || 'var(--text-3)'}">${LABEL[c] || 'In progress'}</span></td></tr>`; }).join('');
 }
 
 async function load() {
   [DAYS, STATUS] = await Promise.all([fetch('/api/days').then(r => r.json()), fetch('/api/status').then(r => r.json())]);
   const t = STATUS.today || {};
-  $('#sub').textContent = `${STATUS.now} ${STATUS.tz} · 起床 ${STATUS.wake} · 今天：${({idle:'等待中', active:'⏰ 进行中', done:'✅ 已打卡', missed:'❌ 未打卡', skipped:'跳过'})[t.wake_phase] || '–'}`;
+  $('#sub').textContent = `${STATUS.now} ${STATUS.tz} · wake ${STATUS.wake} · today: ${({idle:'waiting', active:'⏰ in progress', done:'✅ checked in', missed:'❌ missed', skipped:'skipped'})[t.wake_phase] || '–'}`;
   if (!month) { const [y, m] = STATUS.now.split('-'); month = new Date(+y, +m - 1, 1); }
   tiles(); calendar(); recent();
   if (selected) detail(selected);

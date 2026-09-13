@@ -1,11 +1,4 @@
-"""探针：判断某一天「有没有打卡」，只读、不发任何消息，stdout 只打印 0 或 1。
-
-依据（任一为真即 1）：
-  1. 提醒事项：那天的「起床打卡」已勾（completionDate 不为空）
-  2. iMessage：那天起床时刻之后，chat.db 里出现过自己回的关键词（整条精确匹配）
-  3. 本机：state/day.json 记录那天 wake_phase == done
-细节写到 stderr，方便人看；exit code 与输出一致（0=有打卡，1=无打卡，2=出错）。
-"""
+"""Read-only probe: did a check-in happen on a given day? Prints 1 or 0, sends nothing."""
 from __future__ import annotations
 
 import json
@@ -18,15 +11,16 @@ from . import imsg, reminders
 from .config import Config, load
 from .daemon import DAY_FILE
 
-APPLE_EPOCH = 978307200  # chat.db 的 date 字段：自 2001-01-01 起的纳秒
+# chat.db stores dates as nanoseconds since 2001-01-01.
+APPLE_EPOCH = 978307200
 
 
 def _clean(t: str) -> str:
-    return re.sub(r"[\s!！。.,，~～]+$", "", t.strip().lower())
+    return re.sub(r"[\s!\uff01\u3002.,\uff0c~\uff5e]+$", "", t.strip().lower())
 
 
 def keyword_reply(cfg: Config, date: str) -> datetime | None:
-    """那天起床时刻之后，自己回的第一条关键词消息的时间。"""
+    """Time of the first keyword reply inside that day's wake window, if any."""
     h, m = cfg.wake_time
     start = datetime.strptime(date, "%Y-%m-%d").replace(hour=h, minute=m, tzinfo=cfg.tz)
     end = start + timedelta(minutes=cfg.hard_timeout_min)
@@ -52,27 +46,27 @@ def probe(cfg: Config, date: str) -> tuple[bool, list[str]]:
         try:
             r = reminders.status(cfg.rem_list, cfg.rem_title, date, cfg.tz.key)
             if not r.get("exists"):
-                notes.append("提醒事项：那天没有这条")
+                notes.append("reminder: none for that day")
             elif r.get("completed") and r.get("completion"):
                 hit = True
-                notes.append(f"提醒事项：已勾 {r['completion'].astimezone(cfg.tz):%H:%M}")
+                notes.append(f"reminder: completed at {r['completion'].astimezone(cfg.tz):%H:%M}")
             else:
-                notes.append("提醒事项：存在，未勾")
+                notes.append("reminder: exists, not completed")
         except reminders.RemindersError as e:
-            notes.append(f"提醒事项：读取失败 {e}")
+            notes.append(f"reminder: read failed {e}")
     try:
         at = keyword_reply(cfg, date)
         if at:
             hit = True
-            notes.append(f"iMessage：{at:%H:%M} 回了关键词")
+            notes.append(f"iMessage: keyword reply at {at:%H:%M}")
         else:
-            notes.append("iMessage：窗口内没有关键词回复")
+            notes.append("iMessage: no keyword reply in the window")
     except sqlite3.Error as e:
-        notes.append(f"iMessage：chat.db 读取失败 {e}")
+        notes.append(f"iMessage: chat.db read failed {e}")
     try:
         d = json.loads(DAY_FILE.read_text())
         if d.get("date") == date:
-            notes.append(f"守护进程：wake_phase={d.get('wake_phase')}")
+            notes.append(f"daemon: wake_phase={d.get('wake_phase')}")
             if d.get("wake_phase") == "done":
                 hit = True
     except (OSError, ValueError):

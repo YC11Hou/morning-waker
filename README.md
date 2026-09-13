@@ -1,105 +1,74 @@
-# MorningWaker 🌅 叫早服务
+# MorningWaker
 
-到点必须**打卡**，不打卡就一路升级：手机催 → 再催 → **给朋友发消息告状**。
-像酒店的 wake-up call：电话一直打到你接为止。也像上班打卡：没人替你按。
+A macOS daemon that makes you check in after your alarm. If you do not, it escalates: your Mac rings, your phone gets nudged, and finally your friends get a message saying you are still asleep.
 
-解决的问题不是"闹钟不够响"，而是**闹钟被手一挥就掐了**。MorningWaker 要求你
-清醒地做一个动作（在手机上回一个字），否则后果会发生在你身上之外的地方。
-
-## 它怎么叫你
+## How it works
 
 ```
-23:30  🌙 该睡了                       ← 睡前提醒（可关）；回「睡」记一笔上床时间
-09:00  ⏰ Mac 循环响铃 + 手机 iMessage    ← 起床流程开始
-09:05  ⏰ 再催
-09:10  ⏰ 最后通牒
-09:15  📣 给朋友发「他还没起」          ← 告状
-       …直到你回「起」：停铃、记录迟到几分钟、发确认
+23:30  🌙 bedtime reminder (optional)
+09:00  ⏰ Mac alarm loops + iMessage to your phone
+09:05  ⏰ second nudge
+09:10  ⏰ last warning
+09:15  📣 iMessage to your friends
+       ...until you check in: alarm stops, lateness is recorded, confirmation is sent
 ```
 
-每一步的时间、文案、动作都在 `config.local.toml` 里改。动作有三种：
-`notify`（推给自己）、`tattle`（发给朋友列表）、`shell`（跑任意命令，自己加更狠的）。
+Times, texts, and actions are all in `config.local.toml`. Actions: `notify` (message yourself), `tattle` (message a list of numbers), `shell` (run a command).
 
-## 打卡方式（三个口，任一即可）
+## Check-in channels
 
-1. **提醒事项（主）**：每天提前一天在 macOS 提醒事项里建好一条「☀️ 起床打卡」，iPhone 到点本地响。
-   你在手机上**勾掉它**就是打卡，勾的那一刻就是打卡时间。MorningWaker 只建、只读，永远不替你勾。
-2. **iMessage**：给自己的号码回一条，内容是关键词之一（默认 `起` / `起了` / `up` / `打卡`）。
-3. **Mac**：`morningwaker checkin`。
+Any one of these counts, only after the wake session has started:
 
-只认起床流程开始之后的信号。
+1. **Reminders**: a reminder is created in a Reminders list ahead of time and fires on your iPhone locally. Completing it is the check-in; its completion time is the check-in time. MorningWaker never completes or deletes reminders.
+2. **iMessage**: reply to your own number with a keyword (`up` by default).
+3. **Mac**: `morningwaker checkin`.
 
-## 前提（macOS）
+## Requirements
 
-1. Mac 已登录 iMessage，且登录的 Apple ID 号码就是你的手机号（消息是"自发自收"，你的 iPhone 会收到横幅）。
-2. 终端/Python 有 **自动化 → Messages** 权限，以及 **完全磁盘访问**（读 `~/Library/Messages/chat.db`，只读）。首次运行会弹授权框。
-3. **早上那个点 Mac 不能在睡眠**。合盖或系统睡眠时什么都不会发生。锁屏可以，睡眠不行：
-   `caffeinate -ism` 挂着，或 `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00`（注意这是本机时区）。
-4. Python ≥ 3.11（用了 `tomllib`）。没有第三方依赖。
+- macOS 14+, Python 3.11+, Xcode Command Line Tools. No third-party packages.
+- Messages.app signed in with an Apple ID whose iMessage address is your phone number.
+- Terminal permissions: Automation for Messages, Full Disk Access (read-only access to `chat.db`), Reminders.
+- The Mac must be awake at wake time. See [SETUP.md](SETUP.md).
 
-## 安装
-
-完整教程（权限怎么给、短信怎么读到、哪些文件不能公开）见 **[SETUP.md](SETUP.md)**。
+## Install
 
 ```bash
 git clone https://github.com/YC11Hou/morning-waker.git && cd morning-waker
-cp config.example.toml config.local.toml     # 填自己的手机号、朋友号码、时间
-bin/morningwaker test-msg                      # 先验证 iMessage 通道：手机应收到一条
-bin/morningwaker on                            # 后台常驻（从终端 fork，继承权限；重启 Mac 后要再跑一次）
-bin/morningwaker drill                         # 演习：整条链路走一遍（15 分钟压成 90 秒，告状只发给自己）
+cp config.example.toml config.local.toml   # set your number, friends, times
+bin/morningwaker test-msg                   # verify the iMessage channel
+bin/morningwaker doctor                     # verify permissions
+bin/morningwaker on                         # start the daemon
+bin/morningwaker drill                      # dry run at 10x speed; tattles go to you
 ```
 
-把 `bin/` 加进 PATH 或 `ln -s $PWD/bin/morningwaker ~/bin/`。
+## Commands
 
-## 命令
-
-| 命令 | 作用 |
+| Command | Description |
 |---|---|
-| `on` / `off` | 启动 / 停止守护进程。`on --launchd` 用 launchd 开机自启，但要先在「隐私与安全性 → 完全磁盘访问」里加上 Python 本体，否则 launchd 起的进程读不了 chat.db |
-| `status` | 守护进程状态、今天的进度、升级阶梯 |
-| `checkin` | 本机打卡 |
-| `drill [倍率]` | 立刻演习，倍率缩放升级分钟数（默认 0.1） |
-| `doctor` | 体检：配置、chat.db 权限、提醒事项列表、定时唤醒、防睡眠、守护进程、告状收件人 |
-| `test-msg` | 给自己发一条测试消息 |
-| `probe [日期]` | 探针：那天有没有打卡？只读、不发任何消息，stdout 只打印 `1` / `0`（默认今天） |
-| `log` | 跟踪守护进程日志 |
-| `stats [天]` | 最近 N 天打卡表（终端） |
-| `dash [端口]` | 本地仪表盘：月历按结果上色（准时 / 迟到 / 严重迟到 / 未打卡）、统计块、点某天看时间线。默认 http://127.0.0.1:5180 |
-| `run` | 前台跑守护进程（调试） |
+| `on` / `off` | Start or stop the daemon. `on --launchd` uses launchd (Python itself needs Full Disk Access). |
+| `status` | Daemon state, today's progress, escalation steps. |
+| `checkin` | Check in from the Mac. |
+| `drill [scale]` | Run the full escalation now with minutes scaled (default 0.1). |
+| `doctor` | Check config, permissions, Reminders list, scheduled wake, sleep prevention. |
+| `test-msg` | Send yourself a test iMessage. |
+| `probe [date]` | Read-only: print `1` if that day has a check-in, else `0`. |
+| `log` | Follow the daemon log. |
+| `stats [days]` | Check-in table for the last N days. |
+| `dash [port]` | Local dashboard at http://127.0.0.1:5180. |
+| `run` | Run the daemon in the foreground. |
 
-## 目录
+## Layout
 
 ```
-morningwaker/          代码（config / imsg / reminders / alarm / journal / daemon / cli / web / probe）
-web/                 仪表盘静态页（无构建、无依赖，主题跟随系统）
-helpers/             reminders.swift（EventKit 帮手，首次运行自动编译到 build/）
-tests/               状态机单元测试（python3 -m unittest discover -s tests）
-bin/morningwaker       入口
-launchd/             plist 模板，`on` 时填入路径生成到 ~/Library/LaunchAgents
-config.example.toml  配置样例 —— 唯一需要你改的东西
-config.local.toml    你的真实配置（.gitignore，含号码）—— 个人信息只在这里，见 SETUP.md 第 6 节
-state/               当天进度（.gitignore）
-logs/                打卡日志 journal.jsonl + 守护进程日志（.gitignore）
+morningwaker/        config, imsg, reminders, alarm, journal, daemon, cli, web, probe
+web/                 dashboard page, no build step
+helpers/             reminders.swift, compiled to build/ on first use
+tests/               python3 -m unittest discover -s tests
+launchd/             plist template
+config.example.toml  the only file you need to edit (copy to config.local.toml)
 ```
 
-代码里没有任何个人默认值：号码、朋友、路径全部只从 `config.local.toml` 读。
-仓库可以直接公开。
-
-设计细节见 `ARCHITECTURE.md`。
-
-## 设计要点
-
-- **时区显式配置**，与 Mac 系统时区无关（作者的 Mac 是纽约时区、人在新加坡）。
-- **自发自收通道防自激**：自己发的消息都以 ⏰ ✅ ❌ 🌙 📣 🎯 开头，读 chat.db 时跳过；关键词匹配整条消息，`起床打卡！` 不会误当成 `起`。
-- **守护进程重启不丢状态**：当天进度在 `state/day.json`；重启时若流程还在进行，继续响铃。
-- **启动太晚不误触**：守护进程在起床窗口（起床时刻 + `hard_timeout_min`）之后才启动，当天直接跳过。
-- **演习不伤人**：`drill` 里 `tattle` 改发给自己，`shell` 只记日志。
-- 响铃期间把输出音量拉到配置值，停铃后还原。
-
-## 和其他 iMessage 自动化共存
-
-如果你还有别的程序在读同一个 chat.db 并回复消息（比如一个 iMessage 遥控 agent），
-让它忽略以上六个前缀开头的消息，否则它会把 MorningWaker 的催促当成提问。
+`config.local.toml`, `state/`, and `logs/` hold personal data and are gitignored. The code has no default numbers or paths. Design notes: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 

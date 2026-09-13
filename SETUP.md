@@ -1,93 +1,73 @@
-# MorningWaker 配置教程（从零到跑起来）
+# Setup
 
-全程只在 macOS 上做。不需要任何第三方 Python 包，不需要 MCP，不需要服务器。
-**所有个人信息只写进 `config.local.toml` 这一个文件**，它已在 `.gitignore` 里，永远不会进 git。
+Everything runs locally on macOS. No third-party packages, no servers. All personal values live in `config.local.toml`, which is gitignored.
 
-## 0. 它是怎么碰到你的短信和提醒事项的（先看懂再配）
+## 1. How it reaches your phone
 
-| 通道 | 发 | 收 | 用的系统机制 |
+| Channel | Send | Receive | Permission |
 |---|---|---|---|
-| iMessage | `osascript` 调 Messages.app，给**你自己的号码**发一条 | 只读打开 `~/Library/Messages/chat.db`（SQLite），每 10 秒看有没有新行 | AppleScript 自动化 + 完全磁盘访问 |
-| 提醒事项 | EventKit 新建一条「☀️ 起床打卡」（`helpers/reminders.swift`） | EventKit 读它的 `completionDate` | 提醒事项访问权限 |
-| 本机 | — | `morningwaker checkin` touch 一个文件 | 无 |
+| iMessage | `osascript` tells Messages.app to message your own number | read-only SQLite query on `~/Library/Messages/chat.db` every 10 s | Automation (Messages), Full Disk Access |
+| Reminders | EventKit creates one reminder (`helpers/reminders.swift`) | EventKit reads its `completionDate` | Reminders |
+| Local | none | `morningwaker checkin` touches a file | none |
 
-要点：
+Messaging your own number delivers a banner on every device signed in to the same Apple ID. Your reply syncs back into `chat.db`, where the daemon reads it. Tattling uses the same send path with a friend's number.
 
-- **不是 MCP、不是短信网关**。Messages.app 登录的 Apple ID 就是你的手机号，Mac 给这个号码发 iMessage，
-  你的 iPhone 会像收到别人消息一样弹横幅（"自发自收"）。你在手机上回「起」，这条消息同步回 Mac 的
-  `chat.db`，守护进程读到就算打卡。
-- 读 `chat.db` 走 `sqlite3` 的 `mode=ro`，**只读**，不写、不删、不改。
-- 提醒事项那条由程序**新建**，但**永远不替你勾、不删**。勾是你本人的动作，勾的时刻就是打卡时间。
-- 告状（tattle）就是给朋友的号码也发一条 iMessage，同一条发送通道。
+## 2. Prerequisites
 
-## 1. 前提
+- macOS 14+, Python 3.11+, Xcode Command Line Tools (`xcode-select --install`).
+- Messages.app signed in, with your phone number enabled under Settings > iMessage.
+- iPhone on the same Apple ID with Reminders iCloud sync on.
 
-- macOS 14+，Python ≥ 3.11（用了标准库 `tomllib`），Xcode Command Line Tools（编译 `reminders.swift`：`xcode-select --install`）。
-- Messages.app 已用你的 Apple ID 登录，且 **设置 → iMessage → 可通过以下方式联系** 里勾了你的手机号。
-- iPhone 用同一 Apple ID，提醒事项开了 iCloud 同步（勾掉那条才能同步回 Mac）。
-
-## 2. 拿代码、填配置
+## 3. Configure
 
 ```bash
-git clone https://github.com/YC11Hou/morning-waker.git
-cd morning-waker
+git clone https://github.com/YC11Hou/morning-waker.git && cd morning-waker
 cp config.example.toml config.local.toml
 ```
 
-打开 `config.local.toml`，必填的只有三处：
+Required keys in `config.local.toml`:
 
-| 键 | 填什么 | 备注 |
-|---|---|---|
-| `[imessage].self` | 你自己的手机号，E.164 格式，如 `+6591234567` | 就是 iMessage 登记的那个号。占位值 `+6500000000` 不改程序会拒绝启动 |
-| `[[escalation]] tattle.to` | 朋友的号码列表 | 不想告状就把整段 `action = "tattle"` 删掉 |
-| `[tattle].name` | 你的名字 | 告状文案里的 `{name}` |
+| Key | Value |
+|---|---|
+| `[general].timezone` | IANA zone, e.g. `Europe/Berlin`. Independent of the Mac's system timezone. |
+| `[imessage].self` | Your number in E.164 form. The placeholder is rejected at startup. |
+| `[reminders].list` | An existing Reminders list name. |
+| `[[escalation]] tattle.to` | Friends' numbers. Remove the step if you do not want tattling. |
+| `[tattle].name` | Your name, used as `{name}` in the tattle text. |
 
-其他都有合理默认：`timezone`（按你人在哪填，与 Mac 系统时区无关）、`wake.time`、`reminders.list`
-（提醒事项里**已存在**的列表名，不会自动建列表）。
+To keep the config elsewhere: `export MORNINGWAKER_CONFIG=~/.config/morningwaker.toml`.
 
-也可以不放在项目目录：`export MORNINGWAKER_CONFIG=~/.config/morningwaker.toml`。
-
-## 3. 授权（三个弹窗，各点一次「允许」）
-
-按顺序跑，每一步会触发对应的授权框：
+## 4. Grant permissions
 
 ```bash
-bin/morningwaker test-msg     # ① 自动化 → Messages：手机应收到一条测试消息
-bin/morningwaker doctor       # ② 提醒事项访问；③ 完全磁盘访问（读 chat.db）
+bin/morningwaker test-msg   # prompts for Automation > Messages
+bin/morningwaker doctor     # prompts for Reminders; reports Full Disk Access
 ```
 
-- ③ 不会自动弹：到 **系统设置 → 隐私与安全性 → 完全磁盘访问**，把你跑命令的**终端 App**
-  （Terminal / iTerm / VS Code）加进去，重开终端再跑 `doctor`。
-- `doctor` 全绿才往下走。它会逐项告诉你缺哪一个。
+Full Disk Access does not prompt. Add your terminal app under System Settings > Privacy & Security > Full Disk Access, reopen the terminal, and run `doctor` again until every row is `ok`.
 
-## 4. 演习一遍
+## 5. Dry run
 
 ```bash
-bin/morningwaker on           # 后台守护进程（从当前终端 fork，继承上面的授权）
-bin/morningwaker drill        # 15 分钟的升级阶梯压成 90 秒；告状只发给你自己，不发朋友
+bin/morningwaker on      # daemon forks from this terminal and inherits its permissions
+bin/morningwaker drill   # escalation at 10x speed; tattles go to you, not your friends
 ```
 
-Mac 会响铃、手机会连收几条；在手机上回「起」或跑 `bin/morningwaker checkin` 结束。
-想只验证"能不能读到打卡"而不发任何消息：`bin/morningwaker probe`，输出 `1`（已打卡）或 `0`。
+End it by replying with a keyword or running `bin/morningwaker checkin`. `bin/morningwaker probe` reports whether a check-in was recorded without sending anything.
 
-## 5. 让它每天早上真的醒着
+## 6. Keep the Mac awake
 
-- 提醒事项那条前一天就建好，**iPhone 到点自己响，不依赖 Mac**。
-- 但响铃和升级告状要 Mac 醒着。二选一：
-  - `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00`（**本机时区**，不是配置里的时区）
-  - 或一直 `caffeinate -ism` 挂着。
-- 重启 Mac 后要再跑一次 `bin/morningwaker on`（从终端 fork 才有权限）。
-  想开机自启用 `on --launchd`，但要先在「完全磁盘访问」里加上 **Python 解释器本体**
-  （`which python3` 那个路径），否则 launchd 起的进程读不了 chat.db。
+- The Reminders channel works even if the Mac is asleep, because the reminder is created a day ahead.
+- The alarm and escalation need the Mac awake: `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` (system timezone) or keep `caffeinate -ism` running.
+- After a reboot run `bin/morningwaker on` again. `on --launchd` starts at login but requires Full Disk Access for the Python binary itself (`which python3`).
 
-## 6. 哪些东西是你的、不能公开
+## 7. Private files
 
-| 路径 | 内容 | 状态 |
-|---|---|---|
-| `config.local.toml` | 你和朋友的号码、名字、时间 | `.gitignore` |
-| `state/` | 当天进度、pid、提醒事项 id | `.gitignore` |
-| `logs/` | 打卡日志、守护进程日志 | `.gitignore` |
-| `build/` | 编译出的 EventKit 帮手 | `.gitignore` |
+| Path | Contents |
+|---|---|
+| `config.local.toml` | your numbers, names, times |
+| `state/` | today's progress, pid, reminder ids |
+| `logs/` | check-in journal and daemon log |
+| `build/` | compiled EventKit helper |
 
-代码里没有任何默认号码或绝对路径；缺了配置直接报错，不会悄悄用作者的值。
-fork 之后想确认没夹带私货：`git grep -nE '\+[0-9]{8,}'` 应只命中 `config.example.toml` 和测试里的假号。
+All are gitignored. Before publishing a fork, `git grep -nE '\+[0-9]{8,}'` should only match the placeholders in `config.example.toml` and the test file.
