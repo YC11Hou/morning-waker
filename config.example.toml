@@ -10,7 +10,6 @@ self = "+10000000000"
 [wake]
 time = "09:00"
 weekdays = [1, 2, 3, 4, 5, 6, 7]
-keywords = ["up", "awake", "checkin"]
 hard_timeout_min = 60
 
 [bedtime]
@@ -35,7 +34,7 @@ interval_sec = 2
 [[escalation]]
 after_min = 0
 action = "notify"
-text = "⏰ Wake-up check-in! Reply with a keyword to stop the alarm."
+text = "⏰ Wake-up check-in! Complete the reminder to stop the alarm."
 
 [[escalation]]
 after_min = 5

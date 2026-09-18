@@ -13,8 +13,8 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
                          │ notify/escalate │ check-in signals │ record
               ┌──────────▼───┐  ┌────────▼─────────┐  ┌──▼──────────┐
               │ imsg.send    │  │ reminder done    │  │ journal.jsonl│
-              │ alarm (afplay)│  │ imsg keyword     │  │ state/day.json│
-              │ tattle → friends│ │ state/checkin   │  │              │
+              │ alarm (afplay)│  │ state/checkin   │  │ state/day.json│
+              │ tattle → friends│ │                 │  │              │
               └──────────────┘  └──────────────────┘  └─────────────┘
 ```
 
@@ -25,7 +25,7 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 | `config.py` | Parse TOML, reject placeholders, build an immutable `Config` | none |
 | `daemon.py` | State machine and main loop; `Day` is today's progress, persisted to `state/day.json` | none |
 | `reminders.py` + `helpers/reminders.swift` | Create the day's reminder; read its `completionDate` | EventKit (create and read only) |
-| `imsg.py` | Send iMessage via AppleScript; read new rows from `chat.db` | Messages.app, `chat.db` |
+| `imsg.py` | Send iMessage via AppleScript; read new rows from `chat.db` (bedtime keywords only) | Messages.app, `chat.db` |
 | `alarm.py` | Loop a sound on the Mac; set and restore volume; light the screen | afplay, osascript, caffeinate |
 | `journal.py` | Event journal, daemon log, `stats` table | none |
 | `web.py` + `web/index.html` | Local dashboard on 127.0.0.1 with `/api/days` and `/api/status` | none |
@@ -34,9 +34,8 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 
 ## Check-in channels, in priority order
 
-1. **Reminders**: the daemon creates one daily repeating reminder with an alarm at wake time, so the iPhone fires it without the Mac. Completing an occurrence syncs back; the occurrence whose `completionDate` falls on that day is the check-in. The helper treats an open series as covering every later day, so it never creates a second one.
-2. **iMessage keyword**: the whole message must match a keyword. Messages starting with one of the daemon's own prefixes are ignored.
-3. **Local file**: `morningwaker checkin` touches `state/checkin`; its mtime must be after the session start.
+1. **Reminders**: the daemon creates one daily repeating reminder with an alarm at wake time, so the iPhone fires it without the Mac. Completing an occurrence syncs back; the occurrence whose `completionDate` falls on that day is the check-in, and it is checked before a wake session starts so a Mac that slept through wake time never rings for a day already checked in. The helper calls `refreshSourcesIfNecessary()` before reading so a fresh iCloud completion is not missed. The helper treats an open series as covering every later day, so it never creates a second one.
+2. **Local file**: `morningwaker checkin` touches `state/checkin`; its mtime must be after the session start.
 
 ## Design decisions
 
@@ -46,7 +45,7 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 - **Restart safety**: `state/day.json` stores phase, fired steps, and the rowid baseline; an active session resumes ringing after a restart.
 - **Late start**: the window is `[wake time, wake time + hard_timeout]`; starting after it marks the day skipped instead of ringing.
 - **Safe drills**: `drill` scales the ladder, sends tattles to yourself, and logs shell steps instead of running them.
-- **No self-triggering**: sent messages also land in `chat.db`; a prefix blacklist plus exact-match keywords prevent loops.
+- **No self-triggering**: sent messages also land in `chat.db`; a prefix blacklist plus exact-match bedtime keywords prevent loops.
 
 ## State files
 

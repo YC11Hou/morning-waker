@@ -40,6 +40,7 @@ func dayRange(tzId: String) -> (Date, Date) {
 }
 
 func candidates() -> [EKReminder] {
+    store.refreshSourcesIfNecessary()
     let s2 = DispatchSemaphore(value: 0); var out: [EKReminder] = []
     store.fetchReminders(matching: store.predicateForReminders(in: [cal])) { rs in
         out = (rs ?? []).filter { $0.title == title }; s2.signal()

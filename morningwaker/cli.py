@@ -132,7 +132,7 @@ def cmd_drill(scale: str = "0.1") -> int:
         return 1
     STATE_DIR.mkdir(exist_ok=True)
     DRILL_FILE.write_text(scale)
-    print(f"Drill triggered (scale {scale}). Reply with a keyword or run morningwaker checkin to end it.")
+    print(f"Drill triggered (scale {scale}). Run morningwaker checkin to end it.")
     return 0
 
 

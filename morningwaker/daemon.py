@@ -205,7 +205,8 @@ class Daemon:
         late = max(0.0, self.elapsed_min(at))
         d.wake_phase = "done"
         d.save()
-        journal.event("checkin", now, via=via, late_min=round(late, 1), target=d.target,
+        # The event is stamped with the check-in time itself (reminder completion), not the detection time.
+        journal.event("checkin", at, via=via, late_min=round(late, 1), target=d.target,
                       drill=bool(d.drill_scale))
         self.log(f"Checked in via {via} at {at:%H:%M}, {late:.0f} min late")
         self.notify(f"✅ Checked in at {at:%H:%M} via {via}, {late:.0f} min after {d.target}."
@@ -257,6 +258,13 @@ class Daemon:
         self.ensure_reminder(now)
         if d.wake_phase == "idle":
             if self.wake_due(now):
+                # A reminder already completed today is a check-in; never ring for it.
+                if done_at := self.reminder_completion():
+                    d.wake_started = now.replace(hour=cfg.wake_time[0], minute=cfg.wake_time[1],
+                                                 second=0, microsecond=0).isoformat()
+                    d.target = "%02d:%02d" % cfg.wake_time
+                    self.finish(now, "reminder", at=done_at)
+                    return
                 self.start_wake(now)
             elif self.wake_passed(now):
                 # The daemon started after the window closed; do not ring today.
@@ -273,10 +281,7 @@ class Daemon:
                 CHECKIN_FILE.unlink()
                 self.finish(now, "local")
                 return
-            if any(self.matches(m, cfg.wake_keywords) for m in msgs):
-                self.finish(now, "iMessage")
-                return
-            if (done_at := self.reminder_completion()) and done_at >= started - timedelta(minutes=30):
+            if done_at := self.reminder_completion():
                 self.finish(now, "reminder", at=done_at)
                 return
             el = self.elapsed_min(now)

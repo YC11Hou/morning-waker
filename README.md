@@ -17,11 +17,12 @@ Times, texts, and actions are all in `config.local.toml`. Actions: `notify` (mes
 
 ## Check-in channels
 
-Any one of these counts, only after the wake session has started:
+Either one counts:
 
-1. **Reminders**: a daily repeating reminder is created in a Reminders list and fires on your iPhone locally. Completing the day's occurrence is the check-in; its completion time is the check-in time. MorningWaker never completes or deletes reminders.
-2. **iMessage**: reply to your own number with a keyword (`up` by default).
-3. **Mac**: `morningwaker checkin`.
+1. **Reminders**: a daily repeating reminder is created in a Reminders list and fires on your iPhone locally. Completing the day's occurrence is the check-in; its completion time is the check-in time, even if it was completed before the Mac woke up. MorningWaker never completes or deletes reminders.
+2. **Mac**: `morningwaker checkin`.
+
+iMessage is used only for outgoing notifications and tattles; replies are not read as check-ins.
 
 ## Requirements
 

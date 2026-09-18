@@ -53,7 +53,7 @@ bin/morningwaker on      # daemon forks from this terminal and inherits its perm
 bin/morningwaker drill   # escalation at 10x speed; tattles go to you, not your friends
 ```
 
-End it by replying with a keyword or running `bin/morningwaker checkin`. `bin/morningwaker probe` reports whether a check-in was recorded without sending anything.
+End it by completing the reminder on your phone or running `bin/morningwaker checkin`. `bin/morningwaker probe` reports whether a check-in was recorded without sending anything.
 
 ## 6. Keep the Mac awake
 

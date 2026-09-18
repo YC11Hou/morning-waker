@@ -31,7 +31,6 @@ class Config:
     self_number: str
     wake_time: tuple[int, int]
     weekdays: set[int]
-    wake_keywords: list[str]
     hard_timeout_min: float
     bed_enabled: bool
     bed_time: tuple[int, int]
@@ -75,7 +74,6 @@ def load(path: Path = CONFIG_PATH) -> Config:
         self_number=self_number,
         wake_time=_hm(wake.get("time", "09:00")),
         weekdays=set(wake.get("weekdays", [1, 2, 3, 4, 5, 6, 7])),
-        wake_keywords=[k.lower() for k in wake.get("keywords", ["up"])],
         hard_timeout_min=float(wake.get("hard_timeout_min", 60)),
         bed_enabled=bool(bed.get("enabled", False)),
         bed_time=_hm(bed.get("remind_at", "23:30")),

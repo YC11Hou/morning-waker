@@ -19,7 +19,6 @@ timezone = "UTC"
 self = "+15550001111"
 [wake]
 time = "09:00"
-keywords = ["up", "awake"]
 hard_timeout_min = 60
 [reminders]
 enabled = true
@@ -123,11 +122,10 @@ class DaemonTests(unittest.TestCase):
         self.assertEqual(h.phase, "active"); self.assertTrue(h.d.alarm.ringing)
         self.assertEqual([b for _, b in h.sent], ["wake"])
 
-    def test_phone_reply_checks_in_and_stops_alarm(self):
+    def test_phone_reply_is_not_a_checkin(self):
         h = self.h
         h.tick(120); h.phone("Up!"); h.tick(3)
-        self.assertEqual(h.phase, "done"); self.assertFalse(h.d.alarm.ringing)
-        self.assertIn("✅", h.sent[-1][1]); self.assertIn("3 min after", h.sent[-1][1])
+        self.assertEqual(h.phase, "active"); self.assertTrue(h.d.alarm.ringing)
 
     def test_reminder_completion_checks_in_with_its_own_time(self):
         h = self.h
@@ -137,10 +135,22 @@ class DaemonTests(unittest.TestCase):
         h.tick(10)
         self.assertEqual(h.phase, "done"); self.assertIn("09:07", h.sent[-1][1])
         self.assertIn("via reminder", h.sent[-1][1])
+        rec = [r for r in J.read_all() if r["kind"] == "checkin"][-1]
+        self.assertEqual(rec["ts"], "2026-09-14 09:07:00"); self.assertEqual(rec["late_min"], 7.0)
+
+    def test_reminder_completed_before_session_never_rings(self):
+        h = self.h
+        h.tick(60)
+        h.rem["2026-09-14"] = {"exists": True, "completed": True,
+                               "completion": datetime(2026, 9, 14, 8, 55, tzinfo=TZ)}
+        # The Mac slept through 09:00 and the daemon first ticks at 09:29.
+        h.tick(89)
+        self.assertEqual(h.phase, "done"); self.assertEqual(h.d.alarm.starts, 0)
+        self.assertEqual(len(h.sent), 1); self.assertIn("08:55", h.sent[-1][1])
 
     def test_own_messages_do_not_self_trigger(self):
         h = self.h
-        h.tick(120); h.phone("⏰ Wake-up check-in! Reply up."); h.phone("wake up now"); h.tick(1)
+        h.tick(120); h.phone("⏰ Wake-up check-in!"); h.phone("wake up now"); h.tick(1)
         self.assertEqual(h.phase, "active")
 
     def test_tattle_fires_at_15_and_goes_to_friend(self):
