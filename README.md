@@ -28,12 +28,17 @@ MorningWaker never completes or deletes reminders. iMessage is used only for out
 
 | Type | Passes when | Options |
 |---|---|---|
+| `button` | one press of a big button on the page; nothing to type | `button`, `text`, `done_text` |
 | `location` | the Mac is within `radius_m` of `lat`/`lon` (CoreLocation) | `radius_m`, `max_accuracy_m` |
 | `plugin` | the plugin's `verify()` accepts the answer | `module`, plus any options the plugin reads |
 
 Any check takes `silences_alarm = true` (its pass stops the Mac alarm before the full check-in) and `waive_if_reminder = [words]` / `waive_exclude = [words]` (skip it on days with a matching reminder due in the Reminders list). An escalation step with `unless_passed = [names]` is skipped once those checks have passed or are waived.
 
 `plugins/question_bank.py` asks one question a day from a TOML bank and passes when the answer misses at most `allowed_missing` key ideas (default 1), naming the missing ones otherwise; see `plugins/questions.example.toml`. A plugin is any Python file with `make(name, options)` returning a `morningwaker.gate.Check`. Keep your own banks and plugins in `private/`, which is gitignored.
+
+## Alarm
+
+While a wake session rings, the Mac loops `[alarm].sound` (default: Apple's "Radial" alarm tone from the system ToneLibrary, the iPhone Clock default) with a linear ramp from `start_level` to `end_level` over `ramp_sec`. It forces the built-in speakers (`builtin_speakers`), pins the system volume at `volume` and unmutes it every 2 s, keeps the Mac awake with `caffeinate`, and stops by itself after `max_ring_min`. Volume and output device are restored afterwards. `morningwaker alarm-plan` prints all of this without playing anything.
 
 ## Requirements
 
@@ -61,6 +66,7 @@ bin/morningwaker drill                      # dry run at 10x speed; tattles go t
 | `status` | Daemon state, today's progress, escalation steps. |
 | `checkin` | Check in from the Mac (reminder mode; in gate mode it only ends drills). |
 | `gate` | Open the gate page (gate mode). |
+| `alarm-plan` | Dry run: print sound, volume, ramp, and cap without playing anything. |
 | `waive <check> [date]` | Skip one gate check for one day (default today). |
 | `drill [scale]` | Run the full escalation now with minutes scaled (default 0.1). |
 | `doctor` | Check config, permissions, Reminders list, scheduled wake, sleep prevention. |

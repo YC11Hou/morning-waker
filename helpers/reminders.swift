@@ -103,7 +103,19 @@ case "ensure":
     guard a.count >= 7 else { fail("ensure needs HH:MM and tz", 64) }
     let hm = a[5].split(separator: ":").compactMap { Int($0) }, tz = a[6]
     guard hm.count == 2 else { fail("bad time", 64) }
-    if let r = existing(tzId: tz) { json(["id": r.calendarItemIdentifier, "created": false]); exit(0) }
+    if let r = existing(tzId: tz) {
+        // A changed wake time moves the open series instead of adding a second one.
+        var retimed = false
+        if var c = r.dueDateComponents, !r.isCompleted, c.hour != hm[0] || c.minute != hm[1] {
+            c.hour = hm[0]; c.minute = hm[1]
+            r.dueDateComponents = c
+            r.alarms?.forEach { r.removeAlarm($0) }
+            r.addAlarm(EKAlarm(absoluteDate: c.date!))
+            do { try store.save(r, commit: true) } catch { fail("retime failed: \(error)", 74) }
+            retimed = true
+        }
+        json(["id": r.calendarItemIdentifier, "created": false, "retimed": retimed]); exit(0)
+    }
     let r = EKReminder(eventStore: store)
     r.calendar = cal; r.title = title
     if a.count >= 8 { r.notes = a[7] }

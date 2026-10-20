@@ -35,6 +35,12 @@ open_before_min = 60
 
 # Gate checks, used only in gate mode; every check that is not waived must pass. Keep real values in config.local.toml.
 # [[gate.check]]
+# name = "wake"
+# type = "button"
+# button = "I'm up"
+# silences_alarm = true
+#
+# [[gate.check]]
 # name = "question"
 # type = "plugin"
 # module = "plugins/question_bank.py"
@@ -53,9 +59,16 @@ open_before_min = 60
 
 [alarm]
 enabled = true
-sound = "/System/Library/Sounds/Sosumi.aiff"
+# Apple's "Radial" alarm tone from the system ToneLibrary; any afplay-readable file works.
+sound = "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Radial-EncoreInfinitum.m4r"
+# System output volume, pinned while ringing; the tone itself ramps from start_level to end_level over ramp_sec.
 volume = 80
-interval_sec = 2
+builtin_speakers = true
+start_level = 0.35
+end_level = 1.0
+ramp_sec = 60
+interval_sec = 1
+max_ring_min = 30
 
 # Steps run after_min minutes past wake time without a check-in: notify = message you, tattle = message `to`, shell = run cmd.
 # In gate mode, unless_passed = ["<check>"] skips a step once those checks have passed or are waived.

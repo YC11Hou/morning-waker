@@ -61,7 +61,7 @@ End it by completing the reminder on your phone or running `bin/morningwaker che
 ## 6. Keep the Mac awake
 
 - The Reminders channel works even if the Mac is asleep, because the reminder is created a day ahead.
-- The alarm and escalation need the Mac awake: `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` (system timezone) or keep `caffeinate -ism` running.
+- The alarm and escalation need the Mac awake: `sudo pmset repeat wakeorpoweron MTWRFSU 08:55:00` (system timezone) or keep `caffeinate -ism` running.
 - Under launchd the daemon starts at login and is restarted if it exits. The first iMessage or Reminders call from it may prompt for permission for the Python binary. `on --fork` keeps the old behaviour (inherits the terminal's permissions, but dies with that session).
 
 ## 7. Private files
@@ -72,6 +72,6 @@ End it by completing the reminder on your phone or running `bin/morningwaker che
 | `private/` | your own question banks and gate plugins |
 | `state/` | today's progress, pid, reminder ids |
 | `logs/` | check-in journal and daemon log |
-| `build/` | compiled EventKit and location helpers |
+| `build/` | compiled EventKit, CoreAudio, and location helpers |
 
 All are gitignored. Before publishing a fork, `git grep -nE '\+[0-9]{8,}'` should only match the placeholders in `config.example.toml` and the test file.

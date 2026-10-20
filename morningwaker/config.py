@@ -14,6 +14,7 @@ STATE_DIR = ROOT / "state"
 LOG_DIR = ROOT / "logs"
 PLACEHOLDER_SELF = "+10000000000"
 PLACEHOLDER_FRIEND = "+10000000001"
+DEFAULT_SOUND = "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Radial-EncoreInfinitum.m4r"
 
 
 @dataclass
@@ -50,6 +51,11 @@ class Config:
     gate_port: int = 5181
     gate_open_before_min: float = 60
     gate_checks: list[dict] = field(default_factory=list)
+    alarm_ramp_sec: float = 60
+    alarm_start_level: float = 0.35
+    alarm_end_level: float = 1.0
+    alarm_max_ring_min: float = 30
+    alarm_builtin: bool = True
 
 
 def _hm(s: str) -> tuple[int, int]:
@@ -94,9 +100,14 @@ def load(path: Path = CONFIG_PATH) -> Config:
         bed_time=_hm(bed.get("remind_at", "23:30")),
         bed_keywords=[k.lower() for k in bed.get("keywords", [])],
         alarm_enabled=bool(alarm.get("enabled", True)),
-        alarm_sound=alarm.get("sound", "/System/Library/Sounds/Sosumi.aiff"),
-        alarm_volume=int(alarm.get("volume", 80)),
-        alarm_interval=float(alarm.get("interval_sec", 2)),
+        alarm_sound=alarm.get("sound", DEFAULT_SOUND),
+        alarm_volume=max(0, min(100, int(alarm.get("volume", 80)))),
+        alarm_interval=float(alarm.get("interval_sec", 1)),
+        alarm_ramp_sec=float(alarm.get("ramp_sec", 60)),
+        alarm_start_level=max(0.05, min(1.0, float(alarm.get("start_level", 0.35)))),
+        alarm_end_level=max(0.05, min(1.0, float(alarm.get("end_level", 1.0)))),
+        alarm_max_ring_min=float(alarm.get("max_ring_min", 30)),
+        alarm_builtin=bool(alarm.get("builtin_speakers", True)),
         steps=steps,
         tattle_name=tattle.get("name", "me"),
         rem_enabled=bool(rem.get("enabled", False)),

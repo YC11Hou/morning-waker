@@ -6,11 +6,11 @@ import os
 import re
 import shlex
 import subprocess
-import time
+import threading
 from datetime import datetime, timedelta
 
 from . import imsg, journal, reminders
-from .alarm import Alarm, wake_screen
+from .alarm import Alarm, AlarmSettings, wake_screen
 from .config import STATE_DIR, Config, Step, load
 from .gate import Gate
 from .gate import serve as serve_gate
@@ -25,6 +25,12 @@ SELF_MARKS = ("⏰", "✅", "❌", "🌙", "📣", "🎯")
 
 def open_page(url: str) -> None:
     subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def alarm_settings(cfg: Config) -> AlarmSettings:
+    return AlarmSettings(sound=cfg.alarm_sound, volume=cfg.alarm_volume, interval=cfg.alarm_interval,
+                         ramp_sec=cfg.alarm_ramp_sec, start_level=cfg.alarm_start_level, end_level=cfg.alarm_end_level,
+                         max_ring_min=cfg.alarm_max_ring_min, builtin_speakers=cfg.alarm_builtin)
 
 
 class Day:
@@ -63,7 +69,8 @@ class Daemon:
     def __init__(self, cfg: Config, now_fn=None):
         self.cfg = cfg
         self._now_fn = now_fn
-        self.alarm = Alarm(cfg.alarm_sound, cfg.alarm_volume, cfg.alarm_interval)
+        self.alarm = Alarm(alarm_settings(cfg))
+        self.poke = threading.Event()
         self.day = Day.load(self.now().strftime("%Y-%m-%d"))
         self.gate = Gate(cfg) if cfg.checkin_mode == "gate" else None
         # Only messages newer than this rowid are considered; old ones are never replayed.
@@ -174,7 +181,8 @@ class Daemon:
         if d.wake_phase in ("done", "missed", "skipped") or self.wake_passed(now):
             wanted.append((now + timedelta(days=1)).strftime("%Y-%m-%d"))
         for date in wanted:
-            if date in d.reminder_ids:
+            # Keyed by date and time, so a changed wake time re-runs ensure and moves the series.
+            if f"{date} {hm}" in d.reminder_ids:
                 continue
             if datetime.strptime(date, "%Y-%m-%d").isoweekday() not in cfg.weekdays:
                 continue
@@ -185,9 +193,10 @@ class Daemon:
             except reminders.RemindersError as e:
                 self.log(f"WARN reminder create failed: {e}")
                 return
-            d.reminder_ids[date] = r["id"]
+            d.reminder_ids[f"{date} {hm}"] = r["id"]
             d.save()
-            self.log(f"Reminder {'created' if r['created'] else 'exists'}: {cfg.rem_title} {date} {hm}")
+            state = "created" if r["created"] else "retimed" if r.get("retimed") else "exists"
+            self.log(f"Reminder {state}: {cfg.rem_title} {date} {hm}")
 
     def reminder_completion(self) -> datetime | None:
         cfg, d = self.cfg, self.day
@@ -367,7 +376,7 @@ class Daemon:
         self.log(f"MorningWaker started: wake {'%02d:%02d' % self.cfg.wake_time} "
                  f"{self.cfg.tz.key}, check-in mode {self.cfg.checkin_mode}, listening after rowid={self.last_rowid}")
         if self.gate:
-            serve_gate(self.gate, self.gate_status, self.cfg.gate_port)
+            serve_gate(self.gate, self.gate_status, self.cfg.gate_port, on_submit=self.poke.set)
             self.log(f"Gate page at {self.gate_url}")
         try:
             while True:
@@ -375,7 +384,9 @@ class Daemon:
                     self.tick()
                 except Exception as e:  # noqa: BLE001
                     self.log(f"ERROR tick failed: {e!r}")
-                time.sleep(POLL_SEC)
+                # A gate submit pokes the loop so the alarm stops right away instead of on the next poll.
+                self.poke.wait(POLL_SEC)
+                self.poke.clear()
         finally:
             self.alarm.stop()
 

@@ -54,6 +54,18 @@ text = "not at school"
 [tattle]
 name = "N"
 ''')
+BUTTON_CFG = TMP / "button.toml"
+BUTTON_CFG.write_text(GATE_CFG.read_text().split("[[gate.check]]")[0] + '''
+[[gate.check]]
+name = "wake"
+type = "button"
+silences_alarm = true
+[[escalation]]
+after_min = 10
+action = "notify"
+unless_passed = ["wake"]
+text = "still ringing"
+''')
 GOOD = {"Two Sum": "Use a hash map from value to index and look up target - x in one pass, O(n).",
         "Valid Parentheses": "Push opening brackets on a stack, pop and compare the top on a closing one. O(n)."}
 
@@ -199,6 +211,34 @@ class GateTests(unittest.TestCase):
             self.assertTrue(r["ok"]); self.assertEqual(r["checks"][0]["passed"], "09:00")
         finally:
             srv.shutdown(); srv.server_close()
+
+
+class ButtonGateTests(unittest.TestCase):
+    def setUp(self):
+        self.h = GateHarness(datetime(2026, 9, 14, 7, 0, tzinfo=TZ))
+        self.h.d = D.Daemon(C.load(BUTTON_CFG), now_fn=lambda: self.h.now)
+
+    def tearDown(self): self.h.close()
+
+    def test_one_press_stops_alarm_and_checks_in(self):
+        h = self.h
+        h.tick(120); self.assertTrue(h.d.alarm.ringing)
+        srv = G.serve(h.d.gate, h.d.gate_status, 5198, on_submit=h.d.poke.set)
+        try:
+            con = http.client.HTTPConnection("127.0.0.1", 5198, timeout=5)
+            con.request("POST", "/api/gate/wake", body="{}", headers={"Content-Type": "application/json"})
+            r = json.loads(con.getresponse().read())
+        finally:
+            srv.shutdown(); srv.server_close()
+        self.assertTrue(r["ok"]); self.assertTrue(r["complete"]); self.assertTrue(h.d.poke.is_set())
+        h.tick(0)
+        self.assertEqual(h.phase, "done"); self.assertFalse(h.d.alarm.ringing)
+        h.tick(15); self.assertNotIn("still ringing", [b for _, b in h.sent])
+
+    def test_unpressed_keeps_ringing_and_nudges(self):
+        h = self.h
+        h.tick(120); h.tick(10)
+        self.assertTrue(h.d.alarm.ringing); self.assertIn("still ringing", [b for _, b in h.sent])
 
 
 if __name__ == "__main__":

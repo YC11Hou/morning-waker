@@ -28,6 +28,7 @@ USAGE = """usage: morningwaker <command>
   gate          open the check-in gate page (gate mode)
   waive <check> [date]  skip one gate check for one day (default today)
   drill [scale] run the whole escalation now; scale shrinks the minutes (default 0.1); tattles go to you
+  alarm-plan    dry run: print the alarm's sound, volume, ramp and cap without playing anything
   test-msg      send yourself a test iMessage
   probe [date]  read-only: was there a check-in that day? prints 1 or 0 (default today)
   doctor        check config, chat.db access, Reminders list, scheduled wake, sleep assertions, daemon
@@ -167,6 +168,17 @@ def cmd_drill(scale: str = "0.1") -> int:
     return 0
 
 
+def cmd_alarm_plan() -> int:
+    from .alarm import Alarm
+    from .daemon import alarm_settings
+    cfg = load()
+    plan = Alarm(alarm_settings(cfg)).plan()
+    print(f"wake {'%02d:%02d' % cfg.wake_time} {cfg.tz.key}  alarm {'on' if cfg.alarm_enabled else 'off'}")
+    for k, v in plan.items():
+        print(f"  {k}: {v}")
+    return 0
+
+
 def cmd_test_msg() -> int:
     from . import imsg
     cfg = load()
@@ -202,6 +214,13 @@ def cmd_doctor() -> int:
                 ("exists" if cfg.rem_list in ls else f"not found; available: {ls}"))
         except Exception as e:  # noqa: BLE001
             row(False, "Reminders access", str(e))
+    if cfg.alarm_enabled:
+        from .alarm import Alarm
+        from .daemon import alarm_settings
+        plan = Alarm(alarm_settings(cfg)).plan()
+        row(plan["sound"] == cfg.alarm_sound, "alarm sound", plan["sound"] if plan["sound"] == cfg.alarm_sound
+            else f"{cfg.alarm_sound} missing, falling back to {plan['sound']}")
+        row(not cfg.alarm_builtin or plan["helper"] != "unavailable", "audio helper", plan["helper"])
     sched = subprocess.run(["pmset", "-g", "sched"], capture_output=True, text=True).stdout
     row("wakepoweron" in sched or "wake at" in sched, "scheduled wake (pmset)",
         next((l.strip() for l in sched.splitlines() if "wake" in l), "none; the Mac will not wake from sleep"))
@@ -248,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_waive(argv[1], argv[2] if len(argv) > 2 else None)
     if cmd == "drill":
         return cmd_drill(argv[1] if len(argv) > 1 else "0.1")
+    if cmd == "alarm-plan":
+        return cmd_alarm_plan()
     if cmd == "test-msg":
         return cmd_test_msg()
     if cmd == "doctor":

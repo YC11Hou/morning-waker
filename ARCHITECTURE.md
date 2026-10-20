@@ -29,24 +29,24 @@ A single daemon runs a daily state machine: open the wake session at wake time, 
 | `location.py` + `helpers/location.swift` | Build the location helper as an app bundle, read one position, haversine distance | CoreLocation, Location Services |
 | `plugins/question_bank.py` | Gate plugin: one question a day, key-idea grading | none |
 | `imsg.py` | Send iMessage via AppleScript; read new rows from `chat.db` (bedtime keywords only) | Messages.app, `chat.db` |
-| `alarm.py` | Loop a sound on the Mac; set and restore volume; light the screen | afplay, osascript, caffeinate |
+| `alarm.py` + `helpers/audio.swift` | Loop a tone with a gain ramp; force built-in speakers, pin and restore volume; keep awake; stop after a cap; light the screen | afplay, osascript, caffeinate, CoreAudio |
 | `journal.py` | Event journal, daemon log, `stats` table | none |
 | `web.py` + `web/index.html` | Local dashboard on 127.0.0.1 with `/api/days` and `/api/status` | none |
-| `cli.py` | Commands `on/off/status/checkin/gate/drill/doctor/test-msg/probe/log/stats/dash/run` | launchctl |
+| `cli.py` | Commands `on/off/status/checkin/gate/waive/drill/alarm-plan/doctor/test-msg/probe/log/stats/dash/run` | launchctl |
 | `probe.py` | Read-only check for a given day; prints `0` or `1` | same as above, read only |
 
 ## Check-in channels
 
 In `reminder` mode:
 
-1. **Reminders**: the daemon creates one daily repeating reminder with an alarm at wake time, so the iPhone fires it without the Mac. Completing an occurrence syncs back; the occurrence whose `completionDate` falls on that day is the check-in, and it is checked before a wake session starts so a Mac that slept through wake time never rings for a day already checked in. The helper calls `refreshSourcesIfNecessary()` before reading so a fresh iCloud completion is not missed. The helper treats an open series as covering every later day, so it never creates a second one.
+1. **Reminders**: the daemon creates one daily repeating reminder with an alarm at wake time, so the iPhone fires it without the Mac. Completing an occurrence syncs back; the occurrence whose `completionDate` falls on that day is the check-in, and it is checked before a wake session starts so a Mac that slept through wake time never rings for a day already checked in. The helper calls `refreshSourcesIfNecessary()` before reading so a fresh iCloud completion is not missed. The helper treats an open series as covering every later day, so it never creates a second one; a changed wake time moves that series' due time and alarm instead.
 2. **Local file**: `morningwaker checkin` touches `state/checkin`; its mtime must be after the session start.
 
 In `gate` mode the only channel is the gate:
 
 1. The daemon serves `web/gate.html` on 127.0.0.1 and opens it at wake time. Each check passes on its own and is stored in `state/gate.json` with its time; the day is checked in when every non-waived check has passed, stamped with the last pass time.
 2. The gate accepts answers from `open_before_min` before wake time until the day is settled, so a gate completed early never rings.
-3. A check with `silences_alarm` stops the Mac alarm on pass; escalation continues for the rest. Steps with `unless_passed` are skipped once their checks have passed or are waived.
+3. A gate submit wakes the main loop at once, so a pass stops the alarm without waiting for the next poll. A check with `silences_alarm` stops the Mac alarm on pass; escalation continues for the rest. Steps with `unless_passed` are skipped once their checks have passed or are waived.
 4. Waivers come from Reminders: a reminder due that day whose title contains a `waive_if_reminder` word and no `waive_exclude` word.
 5. Reminder completion and the local file are ignored, except that the file still ends drills.
 6. The server binds only to 127.0.0.1 and rejects requests whose Host header is not the loopback address, so neither the phone nor a web page can submit.
@@ -78,4 +78,4 @@ logs/daemon.log     daemon log
 
 ## Tests
 
-`python3 -m unittest discover -s tests` uses a fake clock, fake iMessage, fake Reminders, and fake alarm. Covered: reminder created ahead, session start, reminder and local check-ins, no self-triggering, tattle timing, timeout, late start, restart resume. `tests/test_gate.py` runs the real question plugin and location check with a fake position: reminder ignored, alarm silenced, last-pass check-in time, wrong answers, distance, `unless_passed`, waivers and exclusions, early pass, closed window, Host check.
+`python3 -m unittest discover -s tests` uses a fake clock, fake iMessage, fake Reminders, and fake alarm. Covered: reminder created ahead, session start, reminder and local check-ins, no self-triggering, tattle timing, timeout, late start, restart resume. `tests/test_gate.py` runs the real question plugin and location check with a fake position: reminder ignored, alarm silenced, last-pass check-in time, wrong answers, distance, `unless_passed`, waivers and exclusions, early pass, closed window, Host check, one-press button check-in. `tests/test_alarm.py` fakes every external command: ramp, built-in output, pinned volume after a mute, restore, cap, missing-sound fallback.

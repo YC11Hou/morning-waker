@@ -45,6 +45,19 @@ class Check:
         raise NotImplementedError
 
 
+class ButtonCheck(Check):
+    """Pass on one press of a big button; nothing to type."""
+
+    title = "Wake up"
+
+    def prompt(self, ctx: Context) -> dict:
+        return {"text": self.options.get("text", ""), "input": False,
+                "button": self.options.get("button", "I'm up"), "big": True}
+
+    def verify(self, ctx: Context, answer: str) -> tuple[bool, str]:
+        return True, self.options.get("done_text", "Alarm off. Good morning.")
+
+
 class LocationCheck(Check):
     """Pass when the Mac is within radius_m of (lat, lon)."""
 
@@ -72,6 +85,8 @@ class LocationCheck(Check):
 
 def load_check(spec: dict) -> Check:
     kind, name = spec.get("type", ""), spec.get("name") or spec.get("type", "")
+    if kind == "button":
+        return ButtonCheck(name, spec)
     if kind == "location":
         if "lat" not in spec or "lon" not in spec:
             raise ValueError(f"gate check {name!r}: location needs lat and lon")
@@ -88,7 +103,7 @@ def load_check(spec: dict) -> Check:
         if not isinstance(check, Check):
             raise ValueError(f"gate check {name!r}: make() must return a morningwaker.gate.Check")
         return check
-    raise ValueError(f"gate check {name!r}: unknown type {kind!r} (use 'location' or 'plugin')")
+    raise ValueError(f"gate check {name!r}: unknown type {kind!r} (use 'button', 'location' or 'plugin')")
 
 
 class Gate:

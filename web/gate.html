@@ -36,6 +36,8 @@ h1 { font-size: 22px; margin: 0; font-weight: 700; }
 textarea { width: 100%; min-height: 160px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
 button { margin-top: 10px; border: none; border-radius: 8px; padding: 8px 16px; font-family: inherit; font-size: 13.5px; font-weight: 600; background: var(--accent); color: #fff; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }
+button.big { display: block; width: 100%; margin-top: 6px; padding: 42px 20px; border-radius: 18px; font-size: 34px; font-weight: 800; letter-spacing: .5px; box-shadow: 0 6px 24px rgba(255,140,0,.35); }
+button.big:active { transform: scale(.985); }
 .msg { margin-top: 10px; font-size: 13px; }
 .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
 .note { color: var(--text-3); font-size: 13px; }
@@ -69,9 +71,9 @@ function render(st) {
     else if (c.waived) { status = '<span class="pill">waived</span>'; body = `<div class="note">Not required today: ${esc(c.waived)}</div>`; }
     else if (c.prompt) {
       const p = c.prompt, dis = st.open ? '' : 'disabled';
-      body = `<p class="prompt">${esc(p.text)}</p>` +
+      body = (p.text ? `<p class="prompt">${esc(p.text)}</p>` : '') +
         (p.input ? `<textarea data-name="${esc(c.name)}" ${dis} placeholder="Type here">${esc(drafts[c.name])}</textarea>` : '') +
-        `<button data-name="${esc(c.name)}" ${dis}>${esc(p.button || 'Submit')}</button>`;
+        `<button data-name="${esc(c.name)}" class="${p.big ? 'big' : ''}" ${dis}>${esc(p.button || 'Submit')}</button>`;
     }
     const m = messages[c.name];
     const msg = m ? `<div class="msg ${m.ok ? 'ok' : 'bad'}">${esc(m.text)}</div>` : '';
