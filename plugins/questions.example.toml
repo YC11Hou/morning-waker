@@ -1,0 +1,14 @@
+# Question bank for plugins/question_bank.py. Copy it outside git (e.g. private/questions.toml) and write your own.
+# Each idea is a list of aliases; the answer must contain at least one alias of every idea.
+
+[[question]]
+title = "Two Sum"
+text = "Given an integer array and a target, return the indices of the two numbers that add up to the target."
+ideas = [["hash", "dict", "map"], ["complement", "target -", "target-"], ["o(n)"]]
+reference = "One pass with a hash map from value to index; for each x look up target - x. O(n) time, O(n) space."
+
+[[question]]
+title = "Valid Parentheses"
+text = "Given a string of brackets ()[]{}, decide whether every bracket is closed in the correct order."
+ideas = [["stack"], ["pop", "top"], ["o(n)"]]
+reference = "Push opening brackets on a stack; on a closing bracket the top must be its match. Valid if the stack ends empty. O(n)."

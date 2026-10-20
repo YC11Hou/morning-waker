@@ -3,17 +3,17 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 
 from . import reminders
 from .config import Config, load
 from .daemon import DAY_FILE
 
 
-
 def probe(cfg: Config, date: str) -> tuple[bool, list[str]]:
     notes: list[str] = []
     hit = False
-    if cfg.rem_enabled:
+    if cfg.rem_enabled and cfg.checkin_mode == "reminder":
         try:
             r = reminders.status(cfg.rem_list, cfg.rem_title, date, cfg.tz.key)
             if not r.get("exists"):

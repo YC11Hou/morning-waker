@@ -24,6 +24,33 @@ list = "Reminders"
 title = "☀️ Wake-up check-in"
 create_ahead_min = 60
 
+[checkin]
+# "reminder": completing the day's reminder (or `morningwaker checkin`) is the check-in.
+# "gate": only the local gate page counts (http://127.0.0.1:<port>/, unreachable from the phone); the reminder is just an alarm.
+mode = "reminder"
+
+[gate]
+port = 5181
+open_before_min = 60
+
+# Gate checks, used only in gate mode; every check that is not waived must pass. Keep real values in config.local.toml.
+# [[gate.check]]
+# name = "question"
+# type = "plugin"
+# module = "plugins/question_bank.py"
+# bank = "plugins/questions.example.toml"
+# min_chars = 60
+# silences_alarm = true
+#
+# [[gate.check]]
+# name = "place"
+# type = "location"
+# lat = 0.0
+# lon = 0.0
+# radius_m = 1000
+# waive_if_reminder = ["interview"]
+# waive_exclude = ["confirm"]
+
 [alarm]
 enabled = true
 sound = "/System/Library/Sounds/Sosumi.aiff"
@@ -31,6 +58,7 @@ volume = 80
 interval_sec = 2
 
 # Steps run after_min minutes past wake time without a check-in: notify = message you, tattle = message `to`, shell = run cmd.
+# In gate mode, unless_passed = ["<check>"] skips a step once those checks have passed or are waived.
 [[escalation]]
 after_min = 0
 action = "notify"
@@ -53,4 +81,6 @@ to = ["+10000000001"]
 text = "(automated) This is {name}'s wake-up bot. The {time} alarm has gone unanswered for 15 minutes. Please give them a nudge."
 
 [tattle]
+# false drops every tattle step, so nobody else is ever messaged.
+enabled = true
 name = "me"

@@ -49,3 +49,8 @@ def status(list_name: str, title: str, date: str, tz: str) -> dict:
     if r.get("completion"):
         r["completion"] = datetime.fromisoformat(r["completion"].replace("Z", "+00:00"))
     return r
+
+
+def due(list_name: str, date: str, tz: str) -> list[str]:
+    """Titles of all reminders in the list due on that date, completed or not."""
+    return _run("due", list_name, date, tz)

@@ -23,6 +23,7 @@ class Step:
     text: str = ""
     to: list[str] = field(default_factory=list)
     cmd: str = ""
+    unless_passed: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -45,6 +46,10 @@ class Config:
     rem_list: str
     rem_title: str
     rem_ahead_min: float
+    checkin_mode: str = "reminder"
+    gate_port: int = 5181
+    gate_open_before_min: float = 60
+    gate_checks: list[dict] = field(default_factory=list)
 
 
 def _hm(s: str) -> tuple[int, int]:
@@ -63,12 +68,22 @@ def load(path: Path = CONFIG_PATH) -> Config:
     wake, bed, alarm = raw.get("wake", {}), raw.get("bedtime", {}), raw.get("alarm", {})
     rem = raw.get("reminders", {})
     steps = [Step(after_min=float(s.get("after_min", 0)), action=s.get("action", "notify"),
-                  text=s.get("text", ""), to=list(s.get("to", [])), cmd=s.get("cmd", ""))
+                  text=s.get("text", ""), to=list(s.get("to", [])), cmd=s.get("cmd", ""),
+                  unless_passed=list(s.get("unless_passed", [])))
              for s in raw.get("escalation", [])]
+    tattle = raw.get("tattle", {})
+    if not tattle.get("enabled", True):
+        steps = [s for s in steps if s.action != "tattle"]
     steps.sort(key=lambda s: s.after_min)
     for s in steps:
         if s.action == "tattle" and PLACEHOLDER_FRIEND in s.to:
             sys.exit("tattle.to still contains the placeholder number; set real numbers or remove the step.")
+    mode = raw.get("checkin", {}).get("mode", "reminder")
+    gate = raw.get("gate", {})
+    if mode not in ("reminder", "gate"):
+        sys.exit(f"[checkin].mode must be 'reminder' or 'gate', got {mode!r}")
+    if mode == "gate" and not gate.get("check"):
+        sys.exit("[checkin].mode is 'gate' but no [[gate.check]] is configured.")
     return Config(
         tz=ZoneInfo(raw.get("general", {}).get("timezone", "UTC")),
         self_number=self_number,
@@ -83,9 +98,13 @@ def load(path: Path = CONFIG_PATH) -> Config:
         alarm_volume=int(alarm.get("volume", 80)),
         alarm_interval=float(alarm.get("interval_sec", 2)),
         steps=steps,
-        tattle_name=raw.get("tattle", {}).get("name", "me"),
+        tattle_name=tattle.get("name", "me"),
         rem_enabled=bool(rem.get("enabled", False)),
         rem_list=rem.get("list", "Reminders"),
         rem_title=rem.get("title", "Wake-up check-in"),
         rem_ahead_min=float(rem.get("create_ahead_min", 60)),
+        checkin_mode=mode,
+        gate_port=int(gate.get("port", 5181)),
+        gate_open_before_min=float(gate.get("open_before_min", 60)),
+        gate_checks=[dict(c) for c in gate.get("check", [])],
     )

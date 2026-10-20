@@ -20,11 +20,13 @@ PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 PY = sys.executable
 
 USAGE = """usage: morningwaker <command>
-  on            start the daemon in the background (forked from this terminal, inherits its permissions)
-  on --launchd  run under launchd instead (starts at login; Python itself needs Full Disk Access)
+  on            run the daemon under launchd (restarted if it exits, started at login)
+  on --fork     fork it from this terminal instead (inherits the terminal's permissions; dies with the session)
   off           stop the daemon (either mode)
   status        daemon state and today's progress
-  checkin       check in from this Mac
+  checkin       check in from this Mac (reminder mode; in gate mode it only ends drills)
+  gate          open the check-in gate page (gate mode)
+  waive <check> [date]  skip one gate check for one day (default today)
   drill [scale] run the whole escalation now; scale shrinks the minutes (default 0.1); tattles go to you
   test-msg      send yourself a test iMessage
   probe [date]  read-only: was there a check-in that day? prints 1 or 0 (default today)
@@ -55,7 +57,7 @@ def _pid() -> int | None:
         return None
 
 
-def cmd_on(launchd: bool = False) -> int:
+def cmd_on(launchd: bool = True) -> int:
     # Validate the config first so placeholder values are rejected before anything starts.
     load()
     journal.LOG_DIR.mkdir(exist_ok=True)
@@ -107,6 +109,8 @@ def cmd_status() -> int:
     else:
         print("daemon: not running")
     print(f"config: {CONFIG_PATH}")
+    print(f"check-in mode: {cfg.checkin_mode}" + (f"  gate http://127.0.0.1:{cfg.gate_port}/ checks "
+          + ", ".join(c.get("name", c.get("type", "")) for c in cfg.gate_checks) if cfg.checkin_mode == "gate" else ""))
     print(f"wake {'%02d:%02d' % cfg.wake_time}  bedtime "
           f"{'%02d:%02d' % cfg.bed_time if cfg.bed_enabled else 'off'}  tz {cfg.tz.key}"
           f"  now {now:%Y-%m-%d %H:%M}")
@@ -122,7 +126,34 @@ def cmd_status() -> int:
 def cmd_checkin() -> int:
     STATE_DIR.mkdir(exist_ok=True)
     CHECKIN_FILE.touch()
+    if load().checkin_mode == "gate":
+        print("Gate mode: this only ends a drill. Real check-ins go through `morningwaker gate`.")
+        return 0
     print("Checked in locally; the daemon confirms within 10 s and stops the alarm")
+    return 0
+
+
+def cmd_waive(name: str, date: str | None) -> int:
+    from .gate import Gate
+    cfg = load()
+    gate = Gate(cfg)
+    if name not in [c.name for c in gate.checks]:
+        print(f"No gate check named {name!r}", file=sys.stderr)
+        return 1
+    date = date or datetime.now(cfg.tz).strftime("%Y-%m-%d")
+    gate.waive(date, name, "skipped by hand")
+    print(f"{name} waived for {date}")
+    return 0
+
+
+def cmd_gate() -> int:
+    cfg = load()
+    if cfg.checkin_mode != "gate":
+        print("[checkin].mode is not 'gate'; see config.example.toml", file=sys.stderr)
+        return 1
+    url = f"http://127.0.0.1:{cfg.gate_port}/"
+    subprocess.run(["open", url])
+    print(f"Opened {url}")
     return 0
 
 
@@ -177,7 +208,22 @@ def cmd_doctor() -> int:
     asr = subprocess.run(["pmset", "-g", "assertions"], capture_output=True, text=True).stdout
     row("PreventSystemSleep" in asr or "PreventUserIdleSystemSleep" in asr, "sleep prevention",
         "held by a process" if "Prevent" in asr else "none (use caffeinate -ism or pmset repeat)")
-    row(bool(_pid() or _loaded()), "daemon", f"pid {_pid()}" if _pid() else "not running")
+    if cfg.checkin_mode == "gate":
+        from . import gate, location
+        try:
+            checks = gate.Gate(cfg).checks
+            row(True, "gate checks", ", ".join(f"{c.name} ({type(c).__name__})" for c in checks))
+        except Exception as e:  # noqa: BLE001
+            row(False, "gate checks", str(e))
+            checks = []
+        if any(isinstance(c, gate.LocationCheck) for c in checks):
+            try:
+                here = location.current()
+                row(True, "location access", f"fix with {here['acc']:.0f} m accuracy")
+            except location.LocationError as e:
+                row(False, "location access", f"{e} (allow MorningWaker in Location Services)")
+    row(bool(_pid() or _loaded()), "daemon", f"pid {_pid()}" if _pid() else
+        ("running under launchd" if _loaded() else "not running"))
     tattle = [s for s in cfg.steps if s.action == "tattle"]
     row(all(s.to for s in tattle), "tattle recipients",
         "set" if all(s.to for s in tattle) else "tattle.to is empty; that step sends to nobody")
@@ -189,13 +235,17 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     cmd = argv[0] if argv else "status"
     if cmd == "on":
-        return cmd_on(launchd="--launchd" in argv)
+        return cmd_on(launchd="--fork" not in argv)
     if cmd == "off":
         return cmd_off()
     if cmd == "status":
         return cmd_status()
     if cmd == "checkin":
         return cmd_checkin()
+    if cmd == "gate":
+        return cmd_gate()
+    if cmd == "waive" and len(argv) > 1:
+        return cmd_waive(argv[1], argv[2] if len(argv) > 2 else None)
     if cmd == "drill":
         return cmd_drill(argv[1] if len(argv) > 1 else "0.1")
     if cmd == "test-msg":

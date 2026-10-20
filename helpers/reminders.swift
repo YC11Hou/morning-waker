@@ -1,4 +1,4 @@
-// EventKit helper: `ensure <list> <title> <date> <HH:MM> <tz> [notes] [repeat]`, `status`, `lists`; creates and reads only.
+// EventKit helper: `ensure <list> <title> <date> <HH:MM> <tz> [notes] [repeat]`, `status`, `due`, `lists`; creates and reads only.
 import EventKit
 import Foundation
 
@@ -11,7 +11,7 @@ func json(_ obj: Any) {
 }
 
 let args = CommandLine.arguments
-guard args.count >= 2 else { fail("usage: reminders ensure|status|lists ...", 64) }
+guard args.count >= 2 else { fail("usage: reminders ensure|status|due|lists ...", 64) }
 
 let store = EKEventStore()
 let sem = DispatchSemaphore(value: 0); var granted = false
@@ -23,8 +23,10 @@ if args[1] == "lists" {
     json(store.calendars(for: .reminder).map { $0.title }); exit(0)
 }
 
-guard args.count >= 6 else { fail("missing arguments", 64) }
-let listName = args[2], title = args[3], dateStr = args[4]
+// `due <list> <date> <tz>` shifts arguments by one, so normalise it to the common layout.
+let a = args[1] == "due" ? [args[0], args[1], args.count > 2 ? args[2] : "", ""] + Array(args.dropFirst(3)) : args
+guard a.count >= 6 else { fail("missing arguments", 64) }
+let listName = a[2], title = a[3], dateStr = a[4]
 guard let cal = store.calendars(for: .reminder).first(where: { $0.title == listName }) else {
     fail("list not found: \(listName)", 66)
 }
@@ -39,11 +41,11 @@ func dayRange(tzId: String) -> (Date, Date) {
     return (start, start.addingTimeInterval(86400))
 }
 
-func candidates() -> [EKReminder] {
+func candidates(anyTitle: Bool = false) -> [EKReminder] {
     store.refreshSourcesIfNecessary()
     let s2 = DispatchSemaphore(value: 0); var out: [EKReminder] = []
     store.fetchReminders(matching: store.predicateForReminders(in: [cal])) { rs in
-        out = (rs ?? []).filter { $0.title == title }; s2.signal()
+        out = (rs ?? []).filter { anyTitle || $0.title == title }; s2.signal()
     }
     s2.wait()
     return out
@@ -80,9 +82,15 @@ func rule(_ spec: String) -> EKRecurrenceRule {
 }
 
 let iso = ISO8601DateFormatter()
-switch args[1] {
+switch a[1] {
+case "due":
+    let (start, end) = dayRange(tzId: a[5])
+    json(candidates(anyTitle: true).compactMap { r -> String? in
+        guard let due = r.dueDateComponents?.date, due >= start && due < end else { return nil }
+        return r.title
+    })
 case "status":
-    let tz = args[5]
+    let tz = a[5]
     let done = completedOn(tzId: tz), open = existing(tzId: tz)
     if let r = done ?? open {
         json(["exists": true, "completed": done != nil,
@@ -92,14 +100,14 @@ case "status":
         json(["exists": false, "completed": false, "completion": NSNull()])
     }
 case "ensure":
-    guard args.count >= 7 else { fail("ensure needs HH:MM and tz", 64) }
-    let hm = args[5].split(separator: ":").compactMap { Int($0) }, tz = args[6]
+    guard a.count >= 7 else { fail("ensure needs HH:MM and tz", 64) }
+    let hm = a[5].split(separator: ":").compactMap { Int($0) }, tz = a[6]
     guard hm.count == 2 else { fail("bad time", 64) }
     if let r = existing(tzId: tz) { json(["id": r.calendarItemIdentifier, "created": false]); exit(0) }
     let r = EKReminder(eventStore: store)
     r.calendar = cal; r.title = title
-    if args.count >= 8 { r.notes = args[7] }
-    r.addRecurrenceRule(rule(args.count >= 9 ? args[8] : "daily"))
+    if a.count >= 8 { r.notes = a[7] }
+    r.addRecurrenceRule(rule(a.count >= 9 ? a[8] : "daily"))
     var c = DateComponents(); c.calendar = Calendar(identifier: .gregorian)
     c.timeZone = TimeZone(identifier: tz)
     c.year = dayParts[0]; c.month = dayParts[1]; c.day = dayParts[2]; c.hour = hm[0]; c.minute = hm[1]
@@ -108,5 +116,5 @@ case "ensure":
     do { try store.save(r, commit: true) } catch { fail("save failed: \(error)", 74) }
     json(["id": r.calendarItemIdentifier, "created": true])
 default:
-    fail("unknown command \(args[1])", 64)
+    fail("unknown command \(a[1])", 64)
 }

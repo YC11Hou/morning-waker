@@ -9,8 +9,9 @@ Everything runs locally on macOS. No third-party packages, no servers. All perso
 | iMessage | `osascript` tells Messages.app to message your own number | read-only SQLite query on `~/Library/Messages/chat.db` every 10 s | Automation (Messages), Full Disk Access |
 | Reminders | EventKit creates one reminder (`helpers/reminders.swift`) | EventKit reads its `completionDate` | Reminders |
 | Local | none | `morningwaker checkin` touches a file | none |
+| Gate | the page opens on the Mac at wake time | POST from the page on 127.0.0.1 | Location Services for `location` checks |
 
-Messaging your own number delivers a banner on every device signed in to the same Apple ID. Your reply syncs back into `chat.db`, where the daemon reads it. Tattling uses the same send path with a friend's number.
+Messaging your own number delivers a banner on every device signed in to the same Apple ID. Tattling uses the same send path with a friend's number. `chat.db` is read only for bedtime keywords; without Full Disk Access that feature is off and everything else works.
 
 ## 2. Prerequisites
 
@@ -44,30 +45,33 @@ bin/morningwaker test-msg   # prompts for Automation > Messages
 bin/morningwaker doctor     # prompts for Reminders; reports Full Disk Access
 ```
 
+In gate mode `doctor` also builds `build/MorningWakerLocation.app` and reads one position, which prompts for Location Services once. It is launched through `open` because macOS only grants location to app bundles.
+
 Full Disk Access does not prompt. Add your terminal app under System Settings > Privacy & Security > Full Disk Access, reopen the terminal, and run `doctor` again until every row is `ok`.
 
 ## 5. Dry run
 
 ```bash
-bin/morningwaker on      # daemon forks from this terminal and inherits its permissions
+bin/morningwaker on      # daemon runs under launchd and is restarted if it exits
 bin/morningwaker drill   # escalation at 10x speed; tattles go to you, not your friends
 ```
 
-End it by completing the reminder on your phone or running `bin/morningwaker checkin`. `bin/morningwaker probe` reports whether a check-in was recorded without sending anything.
+End it by completing the reminder on your phone or running `bin/morningwaker checkin` (in gate mode `checkin` still ends drills). `bin/morningwaker probe` reports whether a check-in was recorded without sending anything.
 
 ## 6. Keep the Mac awake
 
 - The Reminders channel works even if the Mac is asleep, because the reminder is created a day ahead.
 - The alarm and escalation need the Mac awake: `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` (system timezone) or keep `caffeinate -ism` running.
-- After a reboot run `bin/morningwaker on` again. `on --launchd` starts at login but requires Full Disk Access for the Python binary itself (`which python3`).
+- Under launchd the daemon starts at login and is restarted if it exits. The first iMessage or Reminders call from it may prompt for permission for the Python binary. `on --fork` keeps the old behaviour (inherits the terminal's permissions, but dies with that session).
 
 ## 7. Private files
 
 | Path | Contents |
 |---|---|
-| `config.local.toml` | your numbers, names, times |
+| `config.local.toml` | your numbers, names, times, gate places |
+| `private/` | your own question banks and gate plugins |
 | `state/` | today's progress, pid, reminder ids |
 | `logs/` | check-in journal and daemon log |
-| `build/` | compiled EventKit helper |
+| `build/` | compiled EventKit and location helpers |
 
 All are gitignored. Before publishing a fork, `git grep -nE '\+[0-9]{8,}'` should only match the placeholders in `config.example.toml` and the test file.

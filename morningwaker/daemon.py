@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from . import imsg, journal, reminders
 from .alarm import Alarm, wake_screen
 from .config import STATE_DIR, Config, Step, load
+from .gate import Gate
+from .gate import serve as serve_gate
 
 DAY_FILE = STATE_DIR / "day.json"
 CHECKIN_FILE = STATE_DIR / "checkin"
@@ -19,6 +21,10 @@ DRILL_FILE = STATE_DIR / "drill"
 POLL_SEC = 10
 # Every outgoing message starts with one of these; incoming rows with them are ours and skipped.
 SELF_MARKS = ("⏰", "✅", "❌", "🌙", "📣", "🎯")
+
+
+def open_page(url: str) -> None:
+    subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class Day:
@@ -59,8 +65,35 @@ class Daemon:
         self._now_fn = now_fn
         self.alarm = Alarm(cfg.alarm_sound, cfg.alarm_volume, cfg.alarm_interval)
         self.day = Day.load(self.now().strftime("%Y-%m-%d"))
+        self.gate = Gate(cfg) if cfg.checkin_mode == "gate" else None
         # Only messages newer than this rowid are considered; old ones are never replayed.
-        self.last_rowid = imsg.max_rowid()
+        self.last_rowid = self.rowid()
+
+    def rowid(self) -> int:
+        """Latest chat.db rowid, or 0 when chat.db is unreadable (no Full Disk Access); only bedtime keywords need it."""
+        try:
+            return imsg.max_rowid()
+        except Exception:  # noqa: BLE001
+            return 0
+
+    @property
+    def gate_url(self) -> str:
+        return f"http://127.0.0.1:{self.cfg.gate_port}/"
+
+    def gate_status(self) -> dict:
+        now = self.now()
+        return {"date": self.day.date, "now": now, "phase": self.day.wake_phase, "open": self.gate_open(now)}
+
+    def gate_open(self, now: datetime) -> bool:
+        """The gate accepts answers from open_before_min before wake time until the day is settled."""
+        d, cfg = self.day, self.cfg
+        if d.wake_phase == "active":
+            return True
+        if d.wake_phase != "idle" or now.isoweekday() not in cfg.weekdays or self.wake_passed(now):
+            return False
+        h, m = cfg.wake_time
+        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        return now >= target - timedelta(minutes=cfg.gate_open_before_min)
 
     def now(self) -> datetime:
         return self._now_fn() if self._now_fn else datetime.now(self.cfg.tz)
@@ -114,11 +147,15 @@ class Daemon:
         d = self.day
         d.wake_phase, d.wake_started = "active", now.isoformat()
         d.target = now.strftime("%H:%M") if drill_scale else "%02d:%02d" % self.cfg.wake_time
-        d.fired, d.rowid_base, d.drill_scale = [], imsg.max_rowid(), drill_scale
+        d.fired, d.rowid_base, d.drill_scale = [], self.rowid(), drill_scale
         d.save()
+        if self.gate and drill_scale:
+            self.gate.reset(d.date)
         journal.event("wake_start", now, target=d.target, drill=bool(drill_scale))
         self.log(f"Wake session started (target {d.target}{', drill' if drill_scale else ''})")
         wake_screen()
+        if self.gate:
+            open_page(self.gate_url)
         if self.cfg.alarm_enabled:
             self.alarm.start()
 
@@ -142,8 +179,9 @@ class Daemon:
             if datetime.strptime(date, "%Y-%m-%d").isoweekday() not in cfg.weekdays:
                 continue
             try:
-                r = reminders.ensure(cfg.rem_list, cfg.rem_title, date, hm, cfg.tz.key,
-                                     f"Complete this reminder after waking up = check-in. Target {hm}.", repeat)
+                notes = (f"Alarm only: completing this reminder does not check you in. Check in on the Mac at {self.gate_url}."
+                         if self.gate else f"Complete this reminder after waking up = check-in. Target {hm}.")
+                r = reminders.ensure(cfg.rem_list, cfg.rem_title, date, hm, cfg.tz.key, notes, repeat)
             except reminders.RemindersError as e:
                 self.log(f"WARN reminder create failed: {e}")
                 return
@@ -153,7 +191,7 @@ class Daemon:
 
     def reminder_completion(self) -> datetime | None:
         cfg, d = self.cfg, self.day
-        if not cfg.rem_enabled or d.drill_scale:
+        if not cfg.rem_enabled or d.drill_scale or self.gate:
             return None
         try:
             r = reminders.status(cfg.rem_list, cfg.rem_title, d.date, cfg.tz.key)
@@ -164,6 +202,20 @@ class Daemon:
             return r["completion"].astimezone(cfg.tz)
         return None
 
+    def gate_completion(self) -> datetime | None:
+        if not self.gate:
+            return None
+        at = self.gate.complete(self.day.date)
+        return at.astimezone(self.cfg.tz) if at else None
+
+    def completion(self) -> tuple[str, datetime] | None:
+        """The day's check-in from whichever channel the mode allows: (via, time)."""
+        if at := self.gate_completion():
+            return "gate", at
+        if at := self.reminder_completion():
+            return "reminder", at
+        return None
+
     def elapsed_min(self, now: datetime) -> float:
         started = datetime.fromisoformat(self.day.wake_started)
         return (now - started).total_seconds() / 60
@@ -171,7 +223,16 @@ class Daemon:
     def run_step(self, i: int, step: Step, now: datetime) -> None:
         d = self.day
         drill = bool(d.drill_scale)
+        settled = {**self.gate.passed(d.date), **self.gate.waivers(d.date)} if self.gate else {}
+        if step.unless_passed and self.gate and all(n in settled for n in step.unless_passed):
+            d.fired.append(i)
+            d.save()
+            self.log(f"Escalation step {i} skipped: {', '.join(step.unless_passed)} already passed or waived")
+            return
         prefix = "🎯[drill] " if drill else ""
+        # The first open may land behind a locked screen, so every step brings the gate page back to the front.
+        if self.gate and i > 0:
+            open_page(self.gate_url)
         fmt = {"name": self.cfg.tattle_name, "time": d.target,
                "late": f"{self.elapsed_min(now):.0f}"}
         text = step.text.format(**fmt) if step.text else ""
@@ -205,6 +266,8 @@ class Daemon:
         late = max(0.0, self.elapsed_min(at))
         d.wake_phase = "done"
         d.save()
+        if self.gate and d.drill_scale:
+            self.gate.reset(d.date)
         # The event is stamped with the check-in time itself (reminder completion), not the detection time.
         journal.event("checkin", at, via=via, late_min=round(late, 1), target=d.target,
                       drill=bool(d.drill_scale))
@@ -258,12 +321,12 @@ class Daemon:
         self.ensure_reminder(now)
         if d.wake_phase == "idle":
             if self.wake_due(now):
-                # A reminder already completed today is a check-in; never ring for it.
-                if done_at := self.reminder_completion():
+                # A check-in already made today (reminder or gate, per mode) never rings.
+                if done := self.completion():
                     d.wake_started = now.replace(hour=cfg.wake_time[0], minute=cfg.wake_time[1],
                                                  second=0, microsecond=0).isoformat()
                     d.target = "%02d:%02d" % cfg.wake_time
-                    self.finish(now, "reminder", at=done_at)
+                    self.finish(now, done[0], at=done[1])
                     return
                 self.start_wake(now)
             elif self.wake_passed(now):
@@ -272,17 +335,25 @@ class Daemon:
                 d.save()
                 self.log("Wake window already passed today, skipping")
         if d.wake_phase == "active":
-            if cfg.alarm_enabled and not self.alarm.ringing:
+            # In gate mode a check marked silences_alarm stops the Mac alarm before the full check-in.
+            if self.gate and self.gate.silenced(d.date):
+                if self.alarm.ringing:
+                    self.alarm.stop()
+                    self.log("Alarm silenced by a gate check")
+            elif cfg.alarm_enabled and not self.alarm.ringing:
                 self.alarm.start()
             started = datetime.fromisoformat(d.wake_started)
             local_ok = CHECKIN_FILE.exists() and \
                 datetime.fromtimestamp(CHECKIN_FILE.stat().st_mtime, cfg.tz) >= started
             if local_ok:
                 CHECKIN_FILE.unlink()
-                self.finish(now, "local")
-                return
-            if done_at := self.reminder_completion():
-                self.finish(now, "reminder", at=done_at)
+                # The gate is the only real check-in in gate mode; the local file only ends drills there.
+                if not self.gate or d.drill_scale:
+                    self.finish(now, "local")
+                    return
+                self.log("Ignoring local check-in: gate mode requires the gate page")
+            if done := self.completion():
+                self.finish(now, done[0], at=done[1])
                 return
             el = self.elapsed_min(now)
             scale = d.drill_scale or 1.0
@@ -294,7 +365,10 @@ class Daemon:
 
     def run(self) -> None:
         self.log(f"MorningWaker started: wake {'%02d:%02d' % self.cfg.wake_time} "
-                 f"{self.cfg.tz.key}, listening after rowid={self.last_rowid}")
+                 f"{self.cfg.tz.key}, check-in mode {self.cfg.checkin_mode}, listening after rowid={self.last_rowid}")
+        if self.gate:
+            serve_gate(self.gate, self.gate_status, self.cfg.gate_port)
+            self.log(f"Gate page at {self.gate_url}")
         try:
             while True:
                 try:

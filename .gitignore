@@ -1,6 +1,7 @@
 # Private data, never committed
 config.local.toml
 config.local.*
+private/
 CLAUDE.md
 state/
 logs/

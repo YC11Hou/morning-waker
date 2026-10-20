@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MorningWaker Gate</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --bg: #f6f7f9; --bg-panel: #fff; --bg-subtle: #eff1f4; --border: #e2e5e9;
+  --text: #1a1a1a; --text-2: #595959; --text-3: #8c8c8c;
+  --accent: #ff8c00; --ok: #2cbb5d; --bad: #ef4743;
+  --shadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.04); --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1a1a1a; --bg-panel:#262626; --bg-subtle:#303030; --border:#3a3a3a;
+          --text:#eaeaea; --text-2:#b0b0b0; --text-3:#7a7a7a; --shadow: 0 1px 3px rgba(0,0,0,.4); }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; font-weight: 700; }
+.sub { color: var(--text-3); font-size: 13px; }
+.banner { border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px; font-weight: 600; }
+.banner.done { background: var(--ok); color: #fff; }
+.banner.closed { background: var(--bg-subtle); color: var(--text-2); }
+.card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); margin-bottom: 14px; }
+.card h2 { font-size: 15px; margin: 0 0 8px; display: flex; gap: 10px; align-items: center; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: #fff; background: var(--text-3); }
+.pill.ok { background: var(--ok); }
+.pill.todo { background: var(--accent); }
+.prompt { white-space: pre-wrap; line-height: 1.55; color: var(--text); margin: 0 0 12px; }
+textarea { width: 100%; min-height: 160px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
+button { margin-top: 10px; border: none; border-radius: 8px; padding: 8px 16px; font-family: inherit; font-size: 13.5px; font-weight: 600; background: var(--accent); color: #fff; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.msg { margin-top: 10px; font-size: 13px; }
+.msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+.note { color: var(--text-3); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🌅 Check-in gate</h1>
+    <span class="sub" id="sub">Loading…</span>
+  </header>
+  <div id="banner"></div>
+  <div id="checks"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const messages = {}, drafts = {};
+const PHASE = { idle: 'waiting', active: '⏰ wake session running', done: '✅ checked in', missed: '❌ missed', skipped: 'skipped' };
+
+function render(st) {
+  $('#sub').textContent = `${st.date} ${st.now} · ${PHASE[st.phase] || st.phase}`;
+  if (st.phase === 'done' || st.complete) $('#banner').innerHTML = '<div class="banner done">All checks passed. You are checked in for today.</div>';
+  else if (!st.open) $('#banner').innerHTML = '<div class="banner closed">The gate is closed right now. It opens shortly before wake time.</div>';
+  else $('#banner').innerHTML = '';
+  document.querySelectorAll('textarea').forEach(t => drafts[t.dataset.name] = t.value);
+  $('#checks').innerHTML = st.checks.map(c => {
+    let status = '<span class="pill todo">to do</span>', body = '';
+    if (c.passed) status = `<span class="pill ok">passed ${esc(c.passed)}</span>`;
+    else if (c.waived) { status = '<span class="pill">waived</span>'; body = `<div class="note">Not required today: ${esc(c.waived)}</div>`; }
+    else if (c.prompt) {
+      const p = c.prompt, dis = st.open ? '' : 'disabled';
+      body = `<p class="prompt">${esc(p.text)}</p>` +
+        (p.input ? `<textarea data-name="${esc(c.name)}" ${dis} placeholder="Type here">${esc(drafts[c.name])}</textarea>` : '') +
+        `<button data-name="${esc(c.name)}" ${dis}>${esc(p.button || 'Submit')}</button>`;
+    }
+    const m = messages[c.name];
+    const msg = m ? `<div class="msg ${m.ok ? 'ok' : 'bad'}">${esc(m.text)}</div>` : '';
+    const hint = c.silences_alarm && !c.passed && !c.waived ? ' <span class="note">stops the alarm</span>' : '';
+    return `<div class="card"><h2>${esc(c.title)} ${status}${hint}</h2>${body}${msg}</div>`;
+  }).join('');
+  document.querySelectorAll('button[data-name]').forEach(b => b.onclick = () => submit(b));
+}
+
+async function submit(btn) {
+  const name = btn.dataset.name, ta = document.querySelector(`textarea[data-name="${CSS.escape(name)}"]`);
+  btn.disabled = true; btn.textContent = 'Checking…';
+  const r = await fetch(`/api/gate/${encodeURIComponent(name)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: ta ? ta.value : '' }),
+  }).then(r => r.json()).catch(e => ({ ok: false, message: String(e) }));
+  messages[name] = { ok: r.ok, text: r.message };
+  if (r.ok) delete drafts[name];
+  if (r.checks) render(r); else load();
+}
+
+async function load() {
+  if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+  render(await fetch('/api/gate').then(r => r.json()));
+}
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>
